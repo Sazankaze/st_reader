@@ -35,11 +35,11 @@
           <button @click="resetReader" class="back-btn">
             <Icon icon="akar-icons:arrow-left" /> 返回首页
           </button>
-
+          
           <div class="header-title-row">
             <h1>数据档案</h1>
             <div class="dashboard-meta">
-              共 {{ dashboardData.totalFiles }} 个文件
+               共 {{ dashboardData.totalFiles }} 个文件
             </div>
           </div>
         </div>
@@ -315,7 +315,7 @@
           <h2>正则脚本管理</h2>
           <div class="regex-actions">
             <button @click="importScripts" class="btn btn-secondary">导入JSON</button>
-            <button @click="importFromPNG" class="btn btn-secondary">从角色卡导入</button>
+            <button @click="importFromCardOrPreset" class="btn btn-secondary">从角色卡/预设导入</button>
             <button @click="exportScripts" class="btn btn-secondary" :disabled="!regexScripts.length">导出</button>
             <button @click="addNewScript" class="btn btn-primary">添加脚本</button>
           </div>
@@ -2689,75 +2689,55 @@ export default {
     },
 
     // 从角色卡 PNG 导入正则脚本
-    importFromPNG() {
+    // 从 角色卡(PNG) 或 预设(JSON) 导入正则
+    importFromCardOrPreset() {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.png';
+      input.accept = '.png,.json'; // 允许 PNG 和 JSON
+      
       input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
         try {
-          const arrayBuffer = await file.arrayBuffer();
-          const charData = this.extractPNGChara(arrayBuffer);
+          let cardData = null;
 
-          if (!charData) {
-            alert('未能从 PNG 中读取角色数据，请确保这是一个有效的角色卡文件。');
-            return;
-          }
-
-          // 解析 JSON
-          const cardData = JSON.parse(charData);
-
-          // 查找正则脚本
-          let regexScripts = null;
-
-          // 尝试多种可能的路径
-          if (cardData.data?.extensions?.regex_scripts) {
-            regexScripts = cardData.data.extensions.regex_scripts;
-          } else if (cardData.extensions?.regex_scripts) {
-            regexScripts = cardData.extensions.regex_scripts;
-          } else if (cardData.regex_scripts) {
-            regexScripts = cardData.regex_scripts;
-          }
-
-          if (!regexScripts || !Array.isArray(regexScripts) || regexScripts.length === 0) {
-            alert('该角色卡中没有找到正则脚本。');
-            return;
-          }
-
-          // 导入脚本
-          let importCount = 0;
-          regexScripts.forEach(script => {
-            if (script.findRegex) {
-              const newScript = {
-                id: script.id || this.generateUUID(),
-                scriptName: script.scriptName || '未命名脚本',
-                findRegex: script.findRegex,
-                replaceString: script.replaceString || '',
-                disabled: script.disabled || false
-              };
-
-              // 检查是否已存在（按 id 或名称）
-              const existingIndex = this.regexScripts.findIndex(
-                s => s.id === newScript.id || s.scriptName === newScript.scriptName
-              );
-
-              if (existingIndex !== -1) {
-                // 询问是否覆盖
-                if (confirm(`脚本 "${newScript.scriptName}" 已存在，是否覆盖？`)) {
-                  this.regexScripts.splice(existingIndex, 1, newScript);
-                  importCount++;
-                }
-              } else {
-                this.regexScripts.push(newScript);
-                importCount++;
-              }
+          if (file.name.toLowerCase().endsWith('.png')) {
+            // === 处理 PNG 角色卡 ===
+            const arrayBuffer = await file.arrayBuffer();
+            const charDataStr = this.extractPNGChara(arrayBuffer);
+            if (!charDataStr) {
+              alert('未能从 PNG 中读取数据，请确保这是一个有效的角色卡文件。');
+              return;
             }
-          });
+            cardData = JSON.parse(charDataStr);
+            
+          } else if (file.name.toLowerCase().endsWith('.json')) {
+            // === 处理 JSON 预设文件 ===
+            const text = await file.text();
+            cardData = JSON.parse(text);
+          }
 
-          this.saveScriptsToStorage();
-          alert(`成功从角色卡导入 ${importCount} 个正则脚本！`);
+          if (!cardData) {
+            alert('无法解析文件数据。');
+            return;
+          }
+
+          // 智能查找正则脚本数据
+          const foundScripts = this.findRegexScriptsInObject(cardData);
+
+          if (!foundScripts || foundScripts.length === 0) {
+            // 如果用户上传的是 prompt 预设但里面没有 regex_scripts，提示一下
+            if (cardData.prompts) {
+              alert('该 JSON 文件包含 Prompt 预设，但未发现 "regex_scripts" (正则脚本) 字段。');
+            } else {
+              alert('在该文件中未找到正则脚本数据。');
+            }
+            return;
+          }
+
+          // 执行导入
+          this.batchImportScripts(foundScripts);
 
         } catch (err) {
           console.error('导入失败:', err);
@@ -2765,6 +2745,90 @@ export default {
         }
       };
       input.click();
+    },
+
+    // 辅助：在复杂的 JSON 对象中查找 regex_scripts 数组
+    findRegexScriptsInObject(data) {
+      if (!data) return [];
+
+      // 1. 直接就是数组 (标准导出格式)
+      if (Array.isArray(data)) {
+        // 简单检查一下是不是脚本对象
+        if (data.length > 0 && (data[0].scriptName || data[0].regex || data[0].findRegex)) {
+          return data;
+        }
+        return [];
+      }
+
+      // 2. 常见路径查找
+      // 角色卡标准路径
+      if (data.data?.extensions?.regex_scripts) return data.data.extensions.regex_scripts;
+      // 另一种角色卡路径
+      if (data.extensions?.regex_scripts) return data.extensions.regex_scripts;
+      // 根目录直接包含
+      if (data.regex_scripts) return data.regex_scripts;
+      // 预设文件可能包含 regex_scripts
+      if (data.presets && data.presets.regex_scripts) return data.presets.regex_scripts;
+
+      // 3. 如果还是没找到，尝试在 keys 里面找找看有没有叫 regex_scripts 的
+      for (const key in data) {
+        if (key === 'regex_scripts' && Array.isArray(data[key])) {
+          return data[key];
+        }
+        // 如果 data[key] 是对象，也许可以递归一下？为了安全起见，这里只做浅层查找
+      }
+
+      return [];
+    },
+
+    // 辅助：批量处理并保存脚本
+    batchImportScripts(scripts) {
+      if (!Array.isArray(scripts)) return;
+
+      let importCount = 0;
+      scripts.forEach(script => {
+        // 兼容不同的字段名 (SillyTavern 导出可能是 regex/replacement，内部可能是 findRegex/replaceString)
+        const regexPattern = script.findRegex || script.regex;
+        const replacePattern = script.replaceString || script.replacement || ''; // 允许空替换
+        
+        if (regexPattern) {
+          const newScript = {
+            id: script.id || this.generateUUID(),
+            scriptName: script.scriptName || '未命名脚本',
+            findRegex: regexPattern,
+            replaceString: replacePattern,
+            disabled: script.disabled || false
+          };
+
+          // 查重 (按名称或 ID)
+          const existingIndex = this.regexScripts.findIndex(
+            s => s.id === newScript.id || s.scriptName === newScript.scriptName
+          );
+
+          if (existingIndex !== -1) {
+            // 简单处理：如果重名，直接跳过或者覆盖？这里选择跳过以防覆盖用户修改
+            // 或者可以弹窗询问，但批量导入弹窗太烦了。
+            // 策略：如果完全一样则跳过，不一样则添加副本
+            const existing = this.regexScripts[existingIndex];
+            if (existing.findRegex !== newScript.findRegex || existing.replaceString !== newScript.replaceString) {
+               newScript.id = this.generateUUID(); // 生成新ID作为副本
+               newScript.scriptName = newScript.scriptName + ' (导入副本)';
+               this.regexScripts.push(newScript);
+               importCount++;
+            }
+          } else {
+            this.regexScripts.push(newScript);
+            importCount++;
+          }
+        }
+      });
+
+      if (importCount > 0) {
+        this.saveScriptsToStorage();
+        alert(`成功导入 ${importCount} 个正则脚本！`);
+      } else {
+        alert('未导入任何新脚本（可能是重复或格式无效）。');
+      }
     },
 
     // 从 PNG ArrayBuffer 中提取 chara 数据
@@ -4008,35 +4072,48 @@ export default {
    📊 仪表盘 (Dashboard) 样式
    ========================================= */
 
-.dashboard-container {
-  max-width: 1000px;
-  margin: 0 auto;
-  min-height: 100vh;
-  background: #fafafa;
-  /* 如果您希望像聊天页面一样有背景纹理，可以复用 .chat-container 的背景设置 */
-}
-
-/* --- 头部区域 --- */
-.dashboard-header {
+  .dashboard-header {
   padding: 3rem 3rem 1.5rem;
   background: #fff;
   border-bottom: 2px solid #000;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
   position: sticky;
   top: 0;
   z-index: 10;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
 }
 
-.header-left h1 {
+.header-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.header-title-row {
+  display: flex;
+  justify-content: space-between; /* 关键：两端对齐！ */
+  align-items: center; /* 垂直居中 */
+  width: 100%;
+}
+
+/* PC 端默认样式：标题和数据靠左排列，紧挨着 */
+.header-title-row h1 {
   font-size: 2rem;
   font-weight: 800;
-  margin: 1rem 0 0;
-  letter-spacing: -0.02em;
+  margin: 0;
+  line-height: 1;
 }
 
+.dashboard-meta {
+  font-family: 'Consolas', monospace;
+  font-size: 0.9rem;
+  color: #666;
+  background: #f0f0f0;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* 返回按钮样式 */
 .back-btn {
   background: none;
   border: none;
@@ -4047,8 +4124,16 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  transition: color 0.2s;
+  width: fit-content;
 }
+.back-btn:hover { color: #000; }
+
+/* 夜间模式适配 */
+.dark-mode .dashboard-header { background: #1e1e1e; border-bottom-color: #333; }
+.dark-mode .back-btn { color: #aaa; }
+.dark-mode .back-btn:hover { color: #fff; }
+.dark-mode .header-title-row h1 { color: #e0e0e0; }
+.dark-mode .dashboard-meta { background: #2d2d2d; color: #aaa; }
 
 .back-btn:hover {
   color: #000;
@@ -4378,38 +4463,6 @@ export default {
     width: 100%;
     /* 确保容器占满宽度 */
   }
-  /* === 聊天界面返回按钮 (仿仪表盘风格) === */
-.back-link-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font-size: 0.9rem;
-  color: #666;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem; /* 与标题拉开一点距离 */
-  transition: color 0.2s;
-  width: fit-content;
-}
-
-.back-link-btn:hover {
-  background: none; /* 覆盖可能继承的按钮背景 */
-  color: #000;
-}
-
-/* 夜间模式适配 */
-.dark-mode .back-link-btn {
-  background: none;
-  color: #aaa;
-  border: none;
-}
-
-.dark-mode .back-link-btn:hover {
-  color: #fff;
-  background: none;
-}
 
   /* === 核心修改：两端对齐 === */
   .header-title-row {
@@ -4483,12 +4536,13 @@ export default {
   display: flex;
   flex-direction: column; /* 电脑端默认垂直排列 */
   gap: 1.5rem; /* 卡片之间的间距 */
+  align-items: center;
 }
 
 /* 通用上传卡片样式 */
 .upload-card {
   flex: 1;
-  min-width: 280px;
+  min-width: 320px;
   max-width: 350px;
   position: relative;
 }
@@ -4520,6 +4574,50 @@ export default {
   background: #000;
   color: #fff;
   border-color: #000;
+}
+
+/* === 加载状态居中样式 === */
+.loading-status {
+  display: flex;
+  flex-direction: column; /* 上下图表，下文字 */
+  align-items: center;    /* 水平居中 */
+  justify-content: center;
+  margin-top: 2rem;       /* 与上方按钮拉开距离 */
+  color: #666;
+  font-size: 0.9rem;
+  font-weight: 600;
+  gap: 0.75rem;           /* 图标和文字的间距 */
+  animation: fadeIn 0.3s ease;
+}
+
+/* 简单的转圈圈动画 */
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #eee;      /* 浅色底环 */
+  border-top: 3px solid #000;  /* 深色旋转头 */
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 夜间模式适配 */
+.dark-mode .loading-status {
+  color: #aaa;
+}
+
+.dark-mode .spinner {
+  border-color: #333;
+  border-top-color: #e0e0e0;
 }
 
 /* 图标 */
@@ -7528,7 +7626,7 @@ html, body {
 /* 月份卡片布局：宽屏下并排显示，窄屏单列 */
 .calendar-months-wrapper {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 1.5rem;
 }
 
@@ -7818,7 +7916,7 @@ html, body {
 /* === 自定义悬浮提示框样式 === */
 .custom-tooltip {
   position: fixed;
-  z-index: 9999;
+  z-index: 20000;
   background: rgba(0, 0, 0, 0.85);
   /* 深色半透明背景 */
   color: #fff;
@@ -8216,5 +8314,38 @@ html, body {
     opacity: 0.6;
     line-height: 1.2;
   }
+}
+
+/* === 聊天界面返回按钮 (仿仪表盘风格) === */
+.back-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem; /* 与标题拉开一点距离 */
+  transition: color 0.2s;
+  width: fit-content;
+}
+
+.back-link-btn:hover {
+  background: none; /* 覆盖可能继承的按钮背景 */
+  color: #000;
+}
+
+/* 夜间模式适配 */
+.dark-mode .back-link-btn {
+  background: none;
+  color: #aaa;
+  border: none;
+}
+
+.dark-mode .back-link-btn:hover {
+  color: #fff;
+  background: none;
 }
 </style>
