@@ -1,19 +1,186 @@
 <template>
   <div :class="['st-reader', { 'dark-mode': isDarkMode }]">
-    <div v-if="!messages.length" class="upload-area">
+
+    <div v-if="viewMode === 'home'" class="upload-area">
       <div class="upload-container">
-        <input type="file" ref="fileInput" @change="handleFileUpload" accept=".jsonl" id="file-input"
-          class="file-input" />
-        <label for="file-input" class="upload-label">
-          <div class="upload-text">选择 JSONL 文件</div>
-          <div class="upload-hint">SillyTavern 导出的聊天记录</div>
-        </label>
+        <div class="upload-card single-upload">
+          <input type="file" ref="fileInput" @change="handleFileUpload" accept=".jsonl" id="file-input"
+            class="file-input" />
+          <label for="file-input" class="upload-label">
+            <Icon icon="bi:file-earmark-text" class="upload-icon" />
+            <div class="upload-text">单文件阅读</div>
+            <div class="upload-hint">选择单个 .jsonl 文件</div>
+          </label>
+        </div>
+
+        <div class="upload-card zip-upload">
+          <input type="file" ref="zipInput" @change="handleZipUpload" accept=".zip" id="zip-input" class="file-input" />
+          <label for="zip-input" class="upload-label">
+            <Icon icon="bi:file-earmark-zip" class="upload-icon" />
+            <div class="upload-text">数据仪表盘</div>
+            <div class="upload-hint">上传 ZIP 压缩包 · 角色分类 · 统计分析</div>
+          </label>
+        </div>
+
+        <div v-if="loadingStatus" class="loading-status">
+          <div class="spinner"></div>
+          {{ loadingStatus }}
+        </div>
       </div>
     </div>
+
+    <div v-else-if="viewMode === 'dashboard'" class="dashboard-container">
+      <div class="dashboard-header">
+        <div class="header-column">
+          <button @click="resetReader" class="back-btn">
+            <Icon icon="akar-icons:arrow-left" /> 返回首页
+          </button>
+
+          <div class="header-title-row">
+            <h1>数据档案</h1>
+            <div class="dashboard-meta">
+              共 {{ dashboardData.totalFiles }} 个文件
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-content">
+        <div class="stats-overview">
+          <div class="stat-hero">
+            <div class="hero-value">{{ dashboardData.totalEffectiveCN.toLocaleString() }}</div>
+            <div class="hero-label">有效汉字总数 (仅供参考)</div>
+          </div>
+          
+          <div class="stat-divider"></div>
+
+          <div class="stat-sub-row">
+            <div class="sub-stat">
+              <div class="sub-value">{{ Object.keys(dashboardData.groups).length }}</div>
+              <div class="sub-label">角色数量</div>
+            </div>
+
+            <div class="sub-stat">
+              <div class="sub-value">{{ dashboardData.totalTurns.toLocaleString() }}</div>
+              <div class="sub-label">总对话楼层</div>
+            </div>
+
+            <div class="sub-stat">
+              <div class="sub-value">{{ dashboardData.totalRerolls.toLocaleString() }}</div>
+              <div class="sub-label">重Roll次数</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-calendar-section" v-if="dashboardCalendar.months.length > 0">
+          <div class="dash-cal-header">
+            <div class="dash-cal-title">
+              <Icon icon="bi:calendar-check" /> 酒馆日记
+            </div>
+            <div class="dash-cal-meta">
+              活跃 {{ dashboardCalendar.activeDays }} 天 · 累计 {{ dashboardCalendar.totalMessages }} 条消息
+            </div>
+          </div>
+
+          <div class="calendar-widget dashboard-widget">
+            <div class="calendar-nav">
+              <button @click="prevDashMonth"
+                :disabled="dashboardCalendar.currentMonthIdx >= dashboardCalendar.months.length - 1"
+                class="nav-btn">◀</button>
+
+              <div class="current-month-label">
+                {{ dashboardCalendar.months[dashboardCalendar.currentMonthIdx].year }}年
+                {{ dashboardCalendar.months[dashboardCalendar.currentMonthIdx].month }}月
+              </div>
+
+              <button @click="nextDashMonth" :disabled="dashboardCalendar.currentMonthIdx <= 0"
+                class="nav-btn">▶</button>
+            </div>
+
+            <div class="month-card single-view">
+              <div class="month-grid">
+                <div class="weekday-header">日</div>
+                <div class="weekday-header">一</div>
+                <div class="weekday-header">二</div>
+                <div class="weekday-header">三</div>
+                <div class="weekday-header">四</div>
+                <div class="weekday-header">五</div>
+                <div class="weekday-header">六</div>
+
+                <div v-for="n in dashboardCalendar.months[dashboardCalendar.currentMonthIdx].paddingStart"
+                  :key="'pad-' + n" class="day-cell padding"></div>
+
+                <div v-for="day in dashboardCalendar.months[dashboardCalendar.currentMonthIdx].days" :key="day.dateStr"
+                  :class="['day-cell', { 'has-data': day.count > 0 }]" :style="{ backgroundColor: day.bgStyle }"
+                  @mouseenter="showDayTooltip($event, day)" @mouseleave="hideDayTooltip"
+                  @mousemove="moveDayTooltip($event)">
+                  <span class="day-number">{{ day.dayNum }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="month-footer-stats">
+              <div class="footer-stat">
+                <span class="f-label">本月消息</span>
+                <span class="f-value">{{
+                  dashboardCalendar.months[dashboardCalendar.currentMonthIdx].totalCount.toLocaleString() }}</span>
+              </div>
+              <div class="footer-divider"></div>
+              <div class="footer-stat">
+                <span class="f-label">本月字数</span>
+                <span class="f-value">{{
+                  dashboardCalendar.months[dashboardCalendar.currentMonthIdx].totalChars.toLocaleString() }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <input v-model="dashboardSearch" type="text" placeholder="搜索角色名或文件名..." class="dash-search-input" />
+        </div>
+
+        <div class="character-groups">
+          <div v-for="(files, charName) in filteredDashboardGroups" :key="charName" class="char-group">
+            <div class="char-header">
+              <div class="char-header-left">
+                <div class="char-name">
+                  <Icon icon="bxs:user" class="char-icon" />
+                  {{ charName }}
+                </div>
+                <div class="char-stats">
+                  {{ files.length }} 个会话 · {{ (files.reduce((a, b) => a + b.effectiveCN, 0)).toLocaleString() }} 字
+                </div>
+              </div>
+              
+              <button @click.stop="openDashboardIntimacy(charName, files)" class="action-button intimacy-btn icon-only-btn" title="查看亲密度">
+                <Icon icon="bxs:heart" class="heart-icon" />
+              </button>
+            </div>
+
+            <div class="file-grid">
+              <div v-for="file in files" :key="file.fileName" class="file-card" @click="openChatFromDashboard(file)">
+                <div class="file-info">
+                  <div class="file-name" :title="file.fileName">{{ file.fileName }}</div>
+                  <div class="file-meta">
+                    <span class="meta-tag cn">{{ file.effectiveCN.toLocaleString() }} 字</span>
+                    <span class="meta-tag turns">{{ file.totalTurns }} 楼</span>
+                  </div>
+                </div>
+                <div class="file-date">{{ file.lastDate }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
 
     <div v-else class="chat-container">
       <div class="chat-header">
         <div class="header-content">
+          <button v-if="fromDashboard" @click="backToDashboard" class="back-link-btn">
+            <Icon icon="akar-icons:arrow-left" /> 返回列表
+          </button>
+
           <h1 class="chat-title">{{ metadata.character_name || '聊天记录' }}</h1>
           <div class="chat-meta">
             <span v-if="metadata.create_date">{{ metadata.create_date }}</span>
@@ -61,7 +228,7 @@
               </template>
             </div>
           </button>
-          <button @click="resetReader" class="reset-button">重新加载</button>
+          <button @click="resetReader" class="reset-button">关闭</button>
         </div>
       </div>
 
@@ -191,7 +358,8 @@
             <div class="script-drag-handle">⋮⋮</div>
             <div class="script-info">
               <div class="script-name">{{ script.scriptName }}</div>
-              <div class="script-regex">{{ script.findRegex.substring(0, 60) }}{{ script.findRegex.length > 60 ? '...' :
+              <div class="script-regex">{{ script.findRegex.substring(0, 60) }}{{ script.findRegex.length > 60 ? '...'
+                :
                 '' }}
               </div>
             </div>
@@ -233,7 +401,8 @@
                 </template>
                 #{{ fav.messageIndex + 1 }}
               </div>
-              <div class="favorite-text">{{ fav.text.substring(0, 100) }}{{ fav.text.length > 100 ? '...' : '' }}</div>
+              <div class="favorite-text">{{ fav.text.substring(0, 100) }}{{ fav.text.length > 100 ? '...' : '' }}
+              </div>
               <div class="favorite-meta">
                 <span v-if="fav.speaker">{{ fav.speaker }}</span>
                 <span>{{ formatFavoriteTime(fav.createdAt) }}</span>
@@ -402,7 +571,6 @@
         </div>
       </div>
 
-      <!-- 自定义字体导入对话框 -->
       <div v-if="showCustomFontDialog" class="modal-overlay" @click.self="showCustomFontDialog = false">
         <div class="modal-dialog custom-font-dialog">
           <div class="modal-header">
@@ -522,7 +690,6 @@
         <div class="reading-content" ref="readingContentEl" :style="getReadingTransform()" v-html="readingFullHtml"
           @mouseup="onReadingMouseUp" @touchstart="onReadingTouchStart" @touchend="onReadingTouchEnd"></div>
 
-        <!-- 左右两侧的翻页热区 -->
         <div class="reading-nav-left" @click="readingPrevPage"></div>
         <div class="reading-nav-right" @click="readingNextPage"></div>
         <div class="reading-nav-center" @click="toggleToolbar"></div>
@@ -620,6 +787,7 @@
         </div>
       </div>
     </div>
+
     <div v-if="showIntimacyModal" class="modal-overlay" @click.self="showIntimacyModal = false">
       <div class="modal-dialog intimacy-dialog">
         <div class="modal-header">
@@ -694,7 +862,7 @@
                     class="day-cell padding"></div>
 
                   <div v-for="day in intimacyData.calendarMonths[currentMonthIndex].days" :key="day.dateStr"
-                    :class="['day-cell', `level-${day.level}`, { 'has-data': day.count > 0 }]"
+                    :class="['day-cell', { 'has-data': day.count > 0 }]" :style="{ backgroundColor: day.bgStyle }"
                     @mouseenter="showDayTooltip($event, day)" @mousemove="moveDayTooltip($event)"
                     @mouseleave="hideDayTooltip">
                     <span class="day-number">{{ day.dayNum }}</span>
@@ -720,20 +888,20 @@
               暂无日历数据
             </div>
 
-            <div v-show="tooltip.show" class="custom-tooltip"
-              :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
-              <div class="tooltip-header">{{ tooltip.dateStr }}</div>
-              <div class="tooltip-row">
-                <Icon icon="pepicons-pencil:letter" class="tooltip-icon" />
-                <span>{{ tooltip.count }} 条消息</span>
-              </div>
-              <div class="tooltip-row">
-                <Icon icon="ri:draft-line" class="tooltip-icon" />
-                <span>{{ tooltip.chars }} 字</span>
-              </div>
-            </div>
+
           </div>
         </div>
+      </div>
+    </div>
+    <div v-show="tooltip.show" class="custom-tooltip" :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
+      <div class="tooltip-header">{{ tooltip.dateStr }}</div>
+      <div class="tooltip-row">
+        <Icon icon="pepicons-pencil:letter" class="tooltip-icon" />
+        <span>{{ tooltip.count }} 条消息</span>
+      </div>
+      <div class="tooltip-row">
+        <Icon icon="ri:draft-line" class="tooltip-icon" />
+        <span>{{ tooltip.chars }} 字</span>
       </div>
     </div>
   </div>
@@ -743,6 +911,7 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Icon } from '@iconify/vue';
+import JSZip from 'jszip';
 
 export default {
   name: 'STReader',
@@ -751,10 +920,30 @@ export default {
   },
   data() {
     return {
+      // === 仪表盘相关状态 ===
+      viewMode: 'home', // 控制视图：'home'(首页) | 'dashboard'(仪表盘) | 'reader'(阅读器)
+      loadingStatus: '', // 加载时的提示文字
+      zipFileCache: null, // 缓存 ZIP 对象，不用每次重新解压
+      fromDashboard: false, // 标记是否是从仪表盘点进来的
+      dashboardSearch: '', // 仪表盘搜索框
+      dashboardData: {
+        totalFiles: 0,
+        totalEffectiveCN: 0,
+        totalTurns: 0,
+        totalRerolls: 0,
+        groups: {} // 存放分组后的文件数据
+      },
       isDarkMode: false,
       metadata: {},
       messages: [],
       rawData: [],
+      // === 新增：仪表盘全局日历数据 ===
+      dashboardCalendar: {
+        months: [],       // 存放计算好的月份数据
+        currentMonthIdx: 0, // 当前显示的月份索引
+        totalMessages: 0,   // 总消息数（校验用）
+        activeDays: 0       // 活跃天数
+      },
       // 正则脚本管理
       regexScripts: [],
       showRegexManager: false,
@@ -878,11 +1067,32 @@ export default {
         count: 0,
         chars: 0
       },
-    // 阅读模式能不能不要再错位了
-    resizeObserver: null,
+      // 阅读模式能不能不要再错位了
+      resizeObserver: null,
     };
   },
   computed: {
+    // === 新增：仪表盘筛选逻辑 ===
+    filteredDashboardGroups() {
+      const query = this.dashboardSearch.toLowerCase();
+      if (!query) return this.dashboardData.groups;
+
+      const result = {};
+      Object.entries(this.dashboardData.groups).forEach(([charName, files]) => {
+        // 匹配角色名
+        const charMatch = charName.toLowerCase().includes(query);
+        // 或者匹配该角色下的文件名
+        const filteredFiles = files.filter(f => f.fileName.toLowerCase().includes(query));
+
+        if (charMatch) {
+          result[charName] = files;
+        } else if (filteredFiles.length > 0) {
+          result[charName] = filteredFiles;
+        }
+      });
+      return result;
+    },
+
     // 过滤后的消息（搜索时使用）
     filteredMessages() {
       if (!this.searchQuery.trim()) {
@@ -915,6 +1125,7 @@ export default {
     }
   },
   mounted() {
+    console.log(this.viewMode);
     // 确保 body 可以滚动（可能上次退出时未正确重置）
     document.body.style.overflow = '';
 
@@ -961,6 +1172,335 @@ export default {
     }
   },
   methods: {
+    // ==========================================
+    // 新增：仪表盘与 ZIP 处理逻辑
+    // ==========================================
+
+    // 1. 处理 ZIP 上传
+    async handleZipUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      this.loadingStatus = '正在解析压缩包，请稍候...';
+
+      try {
+        const zip = await JSZip.loadAsync(file);
+        this.zipFileCache = zip; // 缓存起来
+
+        // 初始化统计数据
+        const stats = {
+          totalFiles: 0,
+          totalEffectiveCN: 0,
+          totalTurns: 0,
+          totalRerolls: 0,
+          groups: {}
+        };
+
+        const processingPromises = [];
+
+        // 遍历 ZIP 包中的文件
+        zip.forEach((relativePath, zipEntry) => {
+          // 跳过文件夹、隐藏文件、非jsonl文件
+          if (zipEntry.dir || zipEntry.name.startsWith('__') || zipEntry.name.includes('.DS_Store') || !zipEntry.name.endsWith('.jsonl')) return;
+
+          // 异步读取并快速分析
+          const promise = zipEntry.async('text').then(text => {
+            const result = this.analyzeJsonlFast(text, zipEntry.name);
+            if (result) {
+              stats.totalFiles++;
+              stats.totalEffectiveCN += result.effectiveCN;
+              stats.totalTurns += result.totalTurns;
+              stats.totalRerolls += result.rerolls;
+
+              const charName = result.characterName || '未知角色';
+              if (!stats.groups[charName]) {
+                stats.groups[charName] = [];
+              }
+              stats.groups[charName].push(result);
+            }
+          });
+          processingPromises.push(promise);
+        });
+
+        // 等待所有文件解析完毕
+        await Promise.all(processingPromises);
+
+        // === 修改：汇总全局热力图数据 (包含字数) ===
+        const globalDateMap = {}; // Key: dateStr, Value: { count, chars }
+
+        Object.keys(stats.groups).forEach(charName => {
+          const files = stats.groups[charName];
+          // 排序
+          files.sort((a, b) => b.fileName.localeCompare(a.fileName));
+
+          files.forEach(f => {
+            if (f.dateMap) {
+              Object.entries(f.dateMap).forEach(([dateKey, dayStats]) => {
+                // dayStats 现在是 { count, chars }
+                if (!globalDateMap[dateKey]) {
+                  globalDateMap[dateKey] = { count: 0, chars: 0 };
+                }
+                globalDateMap[dateKey].count += dayStats.count;
+                globalDateMap[dateKey].chars += dayStats.chars;
+              });
+            }
+          });
+        });
+
+        this.generateDashboardCalendarData(globalDateMap);
+
+        this.dashboardData = stats;
+        this.viewMode = 'dashboard';
+        this.loadingStatus = '';
+
+      } catch (e) {
+        console.error('ZIP 解析失败:', e);
+        alert('ZIP 解析失败: ' + e.message);
+        this.loadingStatus = '';
+      }
+    },
+
+    // 2. 快速分析单个 JSONL
+    analyzeJsonlFast(text, fileName) {
+      try {
+        const lines = text.trim().split('\n');
+        if (lines.length === 0) return null;
+
+        let metadata = {};
+        try {
+          metadata = JSON.parse(lines[0]);
+        } catch (e) { return null; }
+
+        const characterName = metadata.character_name || '未命名';
+
+        // 粗略计算汉字
+        const cleanedText = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        const effectiveCN = (cleanedText.match(/[\u4e00-\u9fa5]/g) || []).length;
+        const totalTurns = Math.max(0, lines.length - 1);
+
+        let rerolls = 0;
+        let lastDate = '未知日期';
+
+        // === 修改：单文件日期统计 (包含字数) ===
+        const dateMap = {}; // Key: "YYYY-MM-DD", Value: { count: 0, chars: 0 }
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i];
+
+          // 预检查
+          if (line.includes('"send_date"') || line.includes('"swipes"')) {
+            try {
+              const row = JSON.parse(line);
+
+              // 1. 统计重选 (跳过开场白)
+              if (i > 1 && row.swipes && row.swipes.length > 1) {
+                rerolls += (row.swipes.length - 1);
+              }
+
+              // 2. 统计日期和字数 (跳过开场白)
+              if (i > 1 && row.send_date) {
+                const d = this.parseSTDate(row.send_date);
+                if (d) {
+                  const y = d.getFullYear();
+                  const m = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  const dateKey = `${y}-${m}-${day}`;
+
+                  if (!dateMap[dateKey]) {
+                    dateMap[dateKey] = { count: 0, chars: 0 };
+                  }
+
+                  // 累加消息数
+                  dateMap[dateKey].count += 1;
+
+                  // 累加字数 (优先取当前选中的 swipe 内容，如果没有则取 mes)
+                  // 简单的长度计算，为了性能不通过 DOMPurify 清洗
+                  const content = (row.swipes && row.swipes.length > 0)
+                    ? (row.swipes[row.swipe_id || 0] || row.mes)
+                    : row.mes;
+
+                  if (content) {
+                    dateMap[dateKey].chars += content.length;
+                  }
+
+                  lastDate = row.send_date;
+                }
+              } else if (row.send_date) {
+                lastDate = row.send_date;
+              }
+            } catch (e) {
+              // 忽略解析错误
+            }
+          }
+        }
+
+        // 格式化 lastDate
+        if (lastDate !== '未知日期') {
+          const d = this.parseSTDate(lastDate);
+          if (d) {
+            lastDate = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+          }
+        }
+
+        return {
+          fileName,
+          characterName,
+          effectiveCN,
+          totalTurns,
+          rerolls,
+          lastDate,
+          dateMap // <--- 返回这个文件的日期统计
+        };
+
+      } catch (e) {
+        console.warn('解析文件出错:', fileName, e);
+        return null;
+      }
+    },
+
+    // 3. 从仪表盘点击具体文件进入聊天
+    async openChatFromDashboard(fileData) {
+      if (!this.zipFileCache) return;
+
+      this.loadingStatus = '正在加载聊天记录...';
+      try {
+        const file = this.zipFileCache.file(fileData.fileName);
+        if (!file) throw new Error('文件未找到');
+
+        const content = await file.async('text');
+        this.parseJSONL(content); // 调用你原有的解析逻辑
+
+        this.viewMode = 'reader'; // 进入阅读模式
+        this.fromDashboard = true; // 标记来源
+        this.loadingStatus = '';
+      } catch (e) {
+        alert('加载失败: ' + e.message);
+        this.loadingStatus = '';
+      }
+    },
+
+    // 4. 从阅读器返回仪表盘
+    backToDashboard() {
+      this.viewMode = 'dashboard';
+      this.resetReaderStateOnly(); // 只清空当前聊天的内容，保留仪表盘数据
+    },
+
+    // === 新增方法 ===
+    generateDashboardCalendarData(globalDateMap) {
+      const dates = Object.keys(globalDateMap).sort();
+      if (dates.length === 0) {
+        this.dashboardCalendar = { months: [], currentMonthIdx: 0, totalMessages: 0, activeDays: 0 };
+        return;
+      }
+
+      // 1. 先遍历一遍找出【全局最大值】，用于计算颜色的相对比例
+      let maxDailyCount = 0;
+      Object.values(globalDateMap).forEach(data => {
+        // 兼容数据格式：可能是 {count, chars} 也可能是数字
+        const count = typeof data === 'number' ? data : data.count;
+        if (count > maxDailyCount) maxDailyCount = count;
+      });
+
+      // 定义渐变颜色范围 (RGB数组)
+      // 浅粉色 (#f8bbd0) -> 深紫红 (#880e4f)
+      const colorStart = [248, 187, 208];
+      const colorEnd = [136, 14, 79];
+
+      const firstDateStr = dates[0];
+      const lastDateStr = dates[dates.length - 1];
+
+      const start = new Date(firstDateStr);
+      const end = new Date(lastDateStr);
+
+      const monthsData = [];
+      let currentYear = start.getFullYear();
+      let currentMonth = start.getMonth();
+
+      const endYear = end.getFullYear();
+      const endMonth = end.getMonth();
+
+      let totalMessages = 0;
+
+      while (currentYear < endYear || (currentYear === endYear && currentMonth <= endMonth)) {
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const firstDayObj = new Date(currentYear, currentMonth, 1);
+        const paddingStart = firstDayObj.getDay();
+
+        const days = [];
+        let monthTotalCount = 0;
+        let monthTotalChars = 0; // 新增：月总字数
+
+        for (let d = 1; d <= daysInMonth; d++) {
+          const mStr = String(currentMonth + 1).padStart(2, '0');
+          const dStr = String(d).padStart(2, '0');
+          const dateKey = `${currentYear}-${mStr}-${dStr}`;
+
+          // 获取数据对象
+          const data = globalDateMap[dateKey] || { count: 0, chars: 0 };
+          const count = data.count;
+          const chars = data.chars;
+
+          monthTotalCount += count;
+          monthTotalChars += chars;
+          totalMessages += count;
+
+          // === 修改核心：不再计算 level，而是直接计算 color ===
+          const bgStyle = this.getGradientColor(count, maxDailyCount, colorStart, colorEnd);
+
+          days.push({
+            dayNum: d,
+            dateStr: dateKey,
+            count: count,
+            chars: chars,
+            bgStyle: bgStyle // <--- 存入具体的颜色字符串
+          });
+        }
+
+        monthsData.push({
+          year: currentYear,
+          month: currentMonth + 1,
+          paddingStart: paddingStart,
+          days: days,
+          totalCount: monthTotalCount,
+          totalChars: monthTotalChars // 新增：存入月总字数
+        });
+
+        currentMonth++;
+        if (currentMonth > 11) {
+          currentMonth = 0;
+          currentYear++;
+        }
+      }
+
+      this.dashboardCalendar.months = monthsData.reverse();
+      this.dashboardCalendar.currentMonthIdx = 0;
+      this.dashboardCalendar.totalMessages = totalMessages;
+      this.dashboardCalendar.activeDays = dates.length;
+    },
+
+    // 仪表盘日历翻页方法
+    prevDashMonth() {
+      if (this.dashboardCalendar.currentMonthIdx < this.dashboardCalendar.months.length - 1) {
+        this.dashboardCalendar.currentMonthIdx++;
+      }
+    },
+    nextDashMonth() {
+      if (this.dashboardCalendar.currentMonthIdx > 0) {
+        this.dashboardCalendar.currentMonthIdx--;
+      }
+    },
+
+    // 辅助：只重置阅读状态
+    resetReaderStateOnly() {
+      this.metadata = {};
+      this.messages = [];
+      this.rawData = [];
+      this.currentPage = 1;
+      this.searchQuery = '';
+      this.readingMode = false;
+      document.body.style.overflow = '';
+    },
+
     // === 夜间模式相关方法 ===
     toggleDarkMode() {
       this.isDarkMode = !this.isDarkMode;
@@ -1028,6 +1568,8 @@ export default {
       const reader = new FileReader();
       reader.onload = (e) => {
         this.parseJSONL(e.target.result);
+        this.viewMode = 'reader'; // 确保切换到 reader 模式
+        this.fromDashboard = false;
       };
       reader.readAsText(file);
     },
@@ -1448,13 +1990,14 @@ export default {
     },
 
     resetReader() {
-      this.metadata = {};
-      this.messages = [];
-      this.rawData = [];
-      this.currentPage = 1;
-      if (this.$refs.fileInput) {
-        this.$refs.fileInput.value = '';
-      }
+      this.viewMode = 'home'; // 回到首页
+      this.resetReaderStateOnly();
+
+      this.zipFileCache = null;
+      this.dashboardData = { totalFiles: 0, groups: {} };
+
+      if (this.$refs.fileInput) this.$refs.fileInput.value = '';
+      if (this.$refs.zipInput) this.$refs.zipInput.value = '';
     },
 
     // ========== 分页方法 ==========
@@ -2755,7 +3298,7 @@ export default {
 
     toggleReadingMode() {
       this.readingMode = !this.readingMode;
-      
+
       if (this.readingMode) {
         // 进入阅读模式
         this.toolbarVisible = false;
@@ -2766,12 +3309,12 @@ export default {
         this.showFavoritesPanel = false;
         this.showStylePanel = false;
         this.selectionMenu.show = false;
-        
+
         this.readingCurrentPage = 1;
         document.body.style.overflow = 'hidden';
 
         this.generateReadingContent();
-        
+
         // 监听窗口大小调整
         window.addEventListener('resize', this.handleResize);
 
@@ -2792,7 +3335,7 @@ export default {
         document.body.style.overflow = '';
         this.toolbarVisible = false;
         window.removeEventListener('resize', this.handleResize);
-        
+
         if (this.resizeObserver) {
           this.resizeObserver.disconnect();
           this.resizeObserver = null;
@@ -2916,7 +3459,7 @@ export default {
       const pageWidth = window.innerWidth; // 视窗宽度（一页的宽度）
       const contentWidth = contentEl.scrollWidth; // 内容实际总宽度
       const currentElWidth = contentEl.offsetWidth; // 元素当前宽度
-      
+
       // 检查容器宽度是否被内容撑开
       if (contentWidth > currentElWidth) {
         contentEl.style.width = `${contentWidth}px`;
@@ -2929,7 +3472,7 @@ export default {
       const fixedWidth = calculatedPages * pageWidth;
       contentEl.style.width = `${fixedWidth}px`;
       this.readingTotalPages = calculatedPages;
-      
+
       if (this.readingCurrentPage > this.readingTotalPages) {
         this.readingCurrentPage = this.readingTotalPages;
       }
@@ -3151,13 +3694,16 @@ export default {
       // 2. 统计每天的数据
       const dayMap = new Map(); // Key: dateStr, Value: { count, chars }
 
-      sortedMsgs.forEach(msg => {
+      sortedMsgs.forEach((msg, index) => {
         const content = this.getMessageContent(msg);
         const msgLen = content ? content.length : 0;
 
         if (content) totalChars += msgLen;
-        if (msg.swipes && msg.swipes.length > 1) totalRerolls += (msg.swipes.length - 1);
 
+        // 【修改处】增加 index > 0 判断，跳过第一条消息（开场白）
+        if (index > 0 && msg.swipes && msg.swipes.length > 1) {
+          totalRerolls += (msg.swipes.length - 1);
+        }
         const date = this.parseSTDate(msg.send_date);
         if (date) {
           const y = date.getFullYear();
@@ -3173,6 +3719,16 @@ export default {
           dayData.chars += msgLen;
         }
       });
+
+      // === 新增：找出单日最大消息量，用于计算渐变 ===
+      let maxDailyCount = 0;
+      for (const val of dayMap.values()) {
+        if (val.count > maxDailyCount) maxDailyCount = val.count;
+      }
+
+      // 定义颜色范围 (和仪表盘保持一致，或者你可以换个深情的颜色)
+      const colorStart = [248, 187, 208];
+      const colorEnd = [233, 30, 99]; // #e91e63
 
       // 3. 生成日历数据
       const firstDateObj = this.parseSTDate(sortedMsgs[0].send_date);
@@ -3215,18 +3771,15 @@ export default {
             monthTotalCount += count;
             monthTotalChars += chars;
 
-            let level = 0;
-            if (count > 0) level = 1;
-            if (count > 20) level = 2;
-            if (count > 50) level = 3;
-            if (count > 100) level = 4;
+            // === 修改核心：计算背景色 ===
+            const bgStyle = this.getGradientColor(count, maxDailyCount, colorStart, colorEnd);
 
             days.push({
               dayNum: d,
               dateStr: dateStr,
               count: count,
               chars: chars,
-              level: level
+              bgStyle: bgStyle // <--- 存入颜色
             });
           }
 
@@ -3299,12 +3852,611 @@ export default {
         this.currentMonthIndex--;
       }
     },
+
+    // === 新增：打开仪表盘角色的亲密度弹窗 ===
+    openDashboardIntimacy(charName, files) {
+      // 1. 初始化数据容器
+      const mergedDateMap = {}; // 合并所有文件的日期数据
+      let totalRerolls = 0;
+      let totalChars = 0;
+      let totalMessages = 0;
+
+      // 2. 遍历该角色的所有文件进行汇总
+      files.forEach(f => {
+        totalRerolls += (f.rerolls || 0);
+        totalChars += (f.effectiveCN || 0);
+        totalMessages += (f.totalTurns || 0);
+
+        if (f.dateMap) {
+          Object.entries(f.dateMap).forEach(([dateKey, stats]) => {
+            if (!mergedDateMap[dateKey]) {
+              mergedDateMap[dateKey] = { count: 0, chars: 0 };
+            }
+            // 兼容旧数据格式（如果是纯数字）或新格式（对象）
+            if (typeof stats === 'number') {
+              mergedDateMap[dateKey].count += stats;
+            } else {
+              mergedDateMap[dateKey].count += stats.count;
+              mergedDateMap[dateKey].chars += stats.chars;
+            }
+          });
+        }
+      });
+
+      // 3. 计算日期范围
+      const sortedDates = Object.keys(mergedDateMap).sort();
+      let firstDateStr = '';
+      let daysSince = 0;
+
+      if (sortedDates.length > 0) {
+        firstDateStr = sortedDates[0]; // YYYY-MM-DD
+        const first = new Date(firstDateStr);
+        const now = new Date();
+        daysSince = Math.floor((now - first) / (24 * 3600 * 1000));
+
+        // 格式化一下显示用的日期
+        this.intimacyData.firstDate = `${first.getFullYear()}/${first.getMonth() + 1}/${first.getDate()}`;
+      } else {
+        this.intimacyData.firstDate = '未知';
+      }
+
+      // 4. 填充基础统计数据
+      this.intimacyData.daysSince = daysSince;
+      this.intimacyData.activeDays = sortedDates.length;
+      this.intimacyData.totalMessages = totalMessages;
+      this.intimacyData.totalChars = totalChars;
+      this.intimacyData.totalRerolls = totalRerolls;
+
+      // 在步骤 5 生成日历数据之前，先算最大值
+      let maxDailyCount = 0;
+      Object.values(mergedDateMap).forEach(val => {
+        if (val.count > maxDailyCount) maxDailyCount = val.count;
+      });
+
+      // 定义颜色：弹窗里也可以用一样的，或者稍微深情一点的颜色
+      const colorStart = [248, 187, 208];
+      const colorEnd = [194, 24, 91]; // #c2185b
+
+      // 5. 生成日历数据 (复用逻辑)
+      // 我们需要把 mergedDateMap 转换成 calendarMonths 结构
+      if (sortedDates.length > 0) {
+        const start = new Date(sortedDates[0]);
+        const end = new Date(sortedDates[sortedDates.length - 1]);
+
+        const monthsData = [];
+        let currentYear = start.getFullYear();
+        let currentMonth = start.getMonth();
+        const endYear = end.getFullYear();
+        const endMonth = end.getMonth();
+
+        while (currentYear < endYear || (currentYear === endYear && currentMonth <= endMonth)) {
+          const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+          const firstDayObj = new Date(currentYear, currentMonth, 1);
+          const paddingStart = firstDayObj.getDay();
+
+          const days = [];
+          let monthTotalCount = 0;
+          let monthTotalChars = 0;
+
+          for (let d = 1; d <= daysInMonth; d++) {
+            const mStr = String(currentMonth + 1).padStart(2, '0');
+            const dStr = String(d).padStart(2, '0');
+            const dateKey = `${currentYear}-${mStr}-${dStr}`;
+
+            const data = mergedDateMap[dateKey] || { count: 0, chars: 0 };
+
+            // === 修改核心：计算颜色 ===
+            const bgStyle = this.getGradientColor(data.count, maxDailyCount, colorStart, colorEnd);
+
+            days.push({
+              dayNum: d,
+              dateStr: dateKey,
+              count: data.count,
+              chars: data.chars,
+              bgStyle: bgStyle // <--- 存入
+            });
+          }
+
+          monthsData.push({
+            year: currentYear,
+            month: currentMonth + 1,
+            paddingStart: paddingStart,
+            days: days,
+            totalCount: monthTotalCount,
+            totalChars: monthTotalChars
+          });
+
+          currentMonth++;
+          if (currentMonth > 11) {
+            currentMonth = 0;
+            currentYear++;
+          }
+        }
+        this.intimacyData.calendarMonths = monthsData.reverse();
+        this.currentMonthIndex = 0;
+      } else {
+        this.intimacyData.calendarMonths = [];
+      }
+
+      // 6. 打开弹窗
+      this.showIntimacyModal = true;
+    },
+
+    // === 新增：颜色插值辅助函数 ===
+    // 输入：当前值, 最大值, 起始颜色[r,g,b], 结束颜色[r,g,b]
+    getGradientColor(value, max, startColor, endColor) {
+      if (value === 0) return ''; // 0值不处理，留给CSS处理背景
+
+      // 确保 ratio 至少有一点点，防止数量少时颜色太淡看不见
+      // 逻辑：(value / max) * 0.8 + 0.2 -> 保证最小透明度/强度有 20%
+      let ratio = value / max;
+      if (ratio < 0.1) ratio = 0.1; // 设定一个最小阈值，保证只要有消息就能看清
+
+      const r = Math.round(startColor[0] + (endColor[0] - startColor[0]) * ratio);
+      const g = Math.round(startColor[1] + (endColor[1] - startColor[1]) * ratio);
+      const b = Math.round(startColor[2] + (endColor[2] - startColor[2]) * ratio);
+
+      return `rgb(${r}, ${g}, ${b})`;
+    },
   }
 }
 
 </script>
 
 <style scoped>
+/* =========================================
+   📊 仪表盘 (Dashboard) 样式
+   ========================================= */
+
+.dashboard-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: #fafafa;
+  /* 如果您希望像聊天页面一样有背景纹理，可以复用 .chat-container 的背景设置 */
+}
+
+/* --- 头部区域 --- */
+.dashboard-header {
+  padding: 3rem 3rem 1.5rem;
+  background: #fff;
+  border-bottom: 2px solid #000;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+.header-left h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin: 1rem 0 0;
+  letter-spacing: -0.02em;
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: color 0.2s;
+}
+
+.back-btn:hover {
+  color: #000;
+}
+
+.dashboard-meta {
+  font-family: 'Consolas', monospace;
+  font-size: 0.9rem;
+  color: #666;
+  background: #f0f0f0;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0px;
+}
+
+/* --- 内容区域 --- */
+.dashboard-content {
+  padding: 2rem 3rem;
+}
+
+/* --- 统计概览卡片 --- */
+.stats-overview {
+  /* === 新增：白色卡片背景样式 === */
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 0px;     /* 圆角 */
+  padding: 2.5rem 2rem;    /* 增加内边距，让内容不拥挤 */
+  box-shadow: 0 4px 20px rgba(0,0,0,0.03); /* 很淡的阴影，增加层次感 */
+  
+  /* 布局保持不变 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 3rem;
+  max-width: 900px;        /* 限制卡片最大宽度 */
+  margin-left: auto;       /* 居中卡片 */
+  margin-right: auto;
+}
+
+/* --- 上部大数字 --- */
+.stat-hero {
+  text-align: center;
+  margin-bottom: 2rem;
+  width: 100%;
+}
+
+.hero-value {
+  font-size: 4.5rem; /* 大数字再大一点点 */
+  font-weight: 800;
+  color: #1a1a1a;
+  line-height: 1;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.hero-label {
+  font-size: 1rem;
+  color: #888;
+  margin-top: 0.5rem;
+  font-weight: 500;
+}
+
+/* --- 分割线 --- */
+.stat-divider {
+  width: 100%;
+  height: 1px;
+  background-color: #f0f0f0; /*稍微淡一点*/
+  margin-bottom: 2rem;
+  max-width: 100%; /* 分割线撑满卡片宽度 (或者保留 padding) */
+}
+
+/* --- 下部三列数据 --- */
+.stat-sub-row {
+  display: flex;
+  justify-content: space-around;
+  width: 100%;
+}
+
+.sub-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  flex: 1; /* 均分宽度 */
+}
+
+.sub-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sub-label {
+  font-size: 0.85rem;
+  color: #999;
+}
+
+/* --- 移动端适配 --- */
+@media (max-width: 768px) {
+  .stats-overview {
+    padding: 1.5rem; /* 手机上内边距小一点 */
+    margin-bottom: 2rem;
+  }
+
+  .hero-value {
+    font-size: 3rem;
+  }
+  
+  .sub-value {
+    font-size: 1.5rem;
+  }
+}
+
+/* --- 夜间模式适配 --- */
+.dark-mode .stats-overview {
+  background: #1e1e1e; /* 夜间模式背景变深 */
+  border-color: #333;
+  box-shadow: none;
+}
+
+.dark-mode .stat-divider {
+  background-color: #333;
+}
+
+/* 文字颜色复用之前的设置 */
+.dark-mode .hero-value,
+.dark-mode .sub-value {
+  color: #e0e0e0;
+}
+
+.dark-mode .hero-label,
+.dark-mode .sub-label {
+  color: #888;
+}
+
+/* --- 搜索/过滤栏 --- */
+.filter-bar {
+  margin-bottom: 2rem;
+}
+
+.dash-search-input {
+  max-width: 400px;
+  padding: 0.8rem 1rem;
+  font-size: 1rem;
+  border: 2px solid #ddd;
+  background: #fff;
+  transition: all 0.2s;
+  border-radius: 0;
+  /* 保持锐利风格 */
+}
+
+.dash-search-input:focus {
+  outline: none;
+  border-color: #000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* --- 角色分组列表 --- */
+.character-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.char-group {
+  animation: fadeIn 0.5s ease;
+}
+
+.char-name {
+  font-size: 1.2rem; /* 稍微调整名字大小 */
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.char-icon {
+  color: #ccc;
+}
+
+.char-stats {
+  font-size: 0.8rem;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* === 纯图标按钮样式 === */
+.icon-only-btn {
+  padding: 0;        /* 去掉内边距 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;    /* 关键：防止被挤扁 */
+  font-size: 1.2rem; /* 图标大小 */
+  line-height: 1;
+}
+
+/* --- 文件网格 --- */
+.file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.file-card {
+  background: #fff;
+  border: 1px solid #eee;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  
+  /* --- 核心修改：减小高度 --- */
+  padding: 0.75rem 1rem;  /* 减小内边距 (原为 1.25rem) */
+  min-height: auto;       /* 取消固定高度 120px，改为自适应 */
+  height: auto;           /* 允许高度随内容缩放 */
+  gap: 0.5rem;            /* 控制内部元素间距 */
+}
+
+.file-card:hover {
+  border-color: #000;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 装饰性左边框 */
+.file-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #000;
+  transform: scaleY(0);
+  transition: transform 0.2s;
+  transform-origin: bottom;
+}
+
+.file-card:hover::before {
+  transform: scaleY(1);
+}
+
+.file-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  margin-bottom: 0.75rem;
+  
+
+  display: -webkit-box;
+  -webkit-line-clamp: 1;  /* 只显示1行，或者改回2行 */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+}
+
+.file-meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.meta-tag {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  background: #f5f5f5;
+  color: #666;
+  border-radius: 2px;
+}
+
+.meta-tag.cn {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.meta-tag.turns {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.file-date {
+  font-size: 0.75rem;
+  color: #ccc;
+  margin-top: 0;       /* 去掉顶部间距，改用 Flex 布局控制 */
+  text-align: right;
+  font-family: monospace;
+  position: absolute;  /* (可选) 如果想把日期固定在右下角，可以用绝对定位 */
+  right: 0.75rem;
+  bottom: 0.75rem;
+}
+
+.file-card:hover .file-date {
+  color: #999;
+}
+
+/* 简单的淡入动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- 移动端适配 --- */
+@media (max-width: 768px) {
+  .dashboard-header {
+    padding: 1.5rem;
+  }
+
+  .header-column {
+    gap: 1rem;
+    width: 100%;
+    /* 确保容器占满宽度 */
+  }
+  /* === 聊天界面返回按钮 (仿仪表盘风格) === */
+.back-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem; /* 与标题拉开一点距离 */
+  transition: color 0.2s;
+  width: fit-content;
+}
+
+.back-link-btn:hover {
+  background: none; /* 覆盖可能继承的按钮背景 */
+  color: #000;
+}
+
+/* 夜间模式适配 */
+.dark-mode .back-link-btn {
+  background: none;
+  color: #aaa;
+  border: none;
+}
+
+.dark-mode .back-link-btn:hover {
+  color: #fff;
+  background: none;
+}
+
+  /* === 核心修改：两端对齐 === */
+  .header-title-row {
+    display: flex;
+    justify-content: space-between !important;
+    /* 关键：左边一个，右边一个 */
+    align-items: center !important;
+    /* 垂直居中 */
+    width: 100%;
+    gap: 0.5rem;
+    /* 防止屏幕太窄时挨得太近 */
+  }
+
+  /* 标题样式微调 */
+  .header-title-row h1 {
+    font-size: 1.75rem;
+    /* 稍微改小一点以免换行 */
+    line-height: 1;
+  }
+
+  /* 统计标签样式微调 */
+  .dashboard-meta {
+    margin-bottom: 0;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.6rem;
+    white-space: nowrap;
+    /* 防止文字换行 */
+
+    /* 如果希望右侧对齐更明显，可以加一点 transform */
+    /* transform: translateY(2px); */
+  }
+
+  .dashboard-content {
+    padding: 1.5rem;
+  }
+
+  .stats-overview {
+    grid-template-columns: 1fr 1fr;
+    /* 手机上两列显示 */
+  }
+
+  .file-grid {
+    grid-template-columns: 1fr;
+    /* 手机上单列显示文件 */
+  }
+}
+
 .st-reader {
   min-height: 100vh;
   background-color: #fafafa;
@@ -3314,7 +4466,9 @@ export default {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
 }
 
-/* 上传区域 */
+/* =========================================
+   2. 首页 / 上传区 (新版双卡片布局)
+   ========================================= */
 .upload-area {
   display: flex;
   align-items: center;
@@ -3325,7 +4479,18 @@ export default {
 
 .upload-container {
   width: 100%;
-  max-width: 400px;
+  max-width: 400px; /* 电脑端限制宽度，确保垂直排列好看 */
+  display: flex;
+  flex-direction: column; /* 电脑端默认垂直排列 */
+  gap: 1.5rem; /* 卡片之间的间距 */
+}
+
+/* 通用上传卡片样式 */
+.upload-card {
+  flex: 1;
+  min-width: 280px;
+  max-width: 350px;
+  position: relative;
 }
 
 .file-input {
@@ -3333,34 +4498,126 @@ export default {
 }
 
 .upload-label {
-  display: block;
-  padding: 4rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  /* 固定高度，确保两个卡片一样大 */
+  padding: 2rem;
   background: rgba(255, 255, 255, 0.9);
   border: 2px solid #000;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   text-align: center;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  color: #1a1a1a;
 }
 
 .upload-label:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
   background: #000;
   color: #fff;
+  border-color: #000;
+}
+
+/* 图标 */
+.upload-icon {
+  font-size: 3.5rem;
+  margin-bottom: 1.5rem;
+  opacity: 0.8;
 }
 
 .upload-text {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
 }
 
 .upload-hint {
   font-size: 0.875rem;
   opacity: 0.6;
+  line-height: 1.5;
 }
 
-.upload-label:hover .upload-hint {
-  opacity: 1;
+/* 加载状态 */
+.loading-status {
+  width: 100%;
+  text-align: center;
+  margin-top: 2rem;
+  color: #666;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* 仪表盘日历专用样式 */
+.dashboard-calendar-section {
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  animation: fadeIn 0.5s ease;
+}
+
+.dash-cal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.dash-cal-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dash-cal-meta {
+  font-size: 0.85rem;
+  color: #666;
+  font-family: 'Consolas', monospace;
+}
+
+/* 复用 .calendar-widget 但做一些调整 */
+.calendar-widget.dashboard-widget {
+  max-width: 100%;
+  /* 在仪表盘里占满宽度 */
+  border: none;
+  /* 去掉边框，因为外层已经有边框了 */
+}
+
+/* 稍微让格子大一点点，因为仪表盘空间大 */
+.dashboard-widget .day-cell {
+  aspect-ratio: auto;
+  height: 40px;
+  /* 固定高度 */
+  font-size: 0.9rem;
+}
+
+/* 夜间模式适配 */
+.dark-mode .dashboard-calendar-section {
+  background: #1e1e1e;
+  border-color: #333;
+}
+
+.dark-mode .dash-cal-header {
+  border-bottom-color: #333;
+}
+
+.dark-mode .dash-cal-title {
+  color: #e0e0e0;
+}
+
+.dark-mode .dash-cal-meta {
+  color: #888;
 }
 
 /* 聊天容器 */
@@ -5303,7 +6560,6 @@ export default {
 
   .action-button,
   .reset-button {
-    width: auto;
     flex: 0 0 auto;
     padding: 0.25rem 0.5rem;
     font-size: 0.7rem;
@@ -5411,6 +6667,21 @@ export default {
 </style>
 
 <style>
+/* === 新增：全局重置 (修复移动端白边和滚动问题) === */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden; /* 禁止横向滚动 */
+  -webkit-tap-highlight-color: transparent; /* 移除点击高亮 */
+}
+
+/* 强制所有元素使用边框盒模型，防止 padding 撑大布局 */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 /* 在线字体加载 - 非scoped以便全局生效 */
 @font-face {
   font-family: 'Alegreya';
@@ -5461,8 +6732,8 @@ export default {
 }
 
 /* =========================================
-   预览框专用样式 (Preview Fix)
-   ========================================= */
+     预览框专用样式 (Preview Fix)
+     ========================================= */
 
 /* 1. 确保斜体颜色生效 */
 .style-preview-content em,
@@ -5499,8 +6770,8 @@ export default {
 }
 
 /* =========================================================
-   🌙 夜间模式 (Dark Mode) - 放在 CSS 最底部以确保覆盖
-   ========================================================= */
+     🌙 夜间模式 (Dark Mode) - 放在 CSS 最底部以确保覆盖
+     ========================================================= */
 
 /* 1. 全局背景与容器 */
 .dark-mode.st-reader {
@@ -5796,8 +7067,8 @@ export default {
 
 /* --- 14. 正则脚本等适配 --- */
 /* =========================================================
-   🌙 补全遗漏的夜间模式适配 (Regex, Tags, Favorites, Export)
-   ========================================================= */
+     🌙 补全遗漏的夜间模式适配 (Regex, Tags, Favorites, Export)
+     ========================================================= */
 
 /* --- 1. 正则脚本与标签过滤器列表 --- */
 
@@ -6190,8 +7461,8 @@ export default {
 }
 
 /* ============================
-   🌙 夜间模式适配
-   ============================ */
+     🌙 夜间模式适配
+     ============================ */
 
 /* 按钮 */
 .dark-mode .intimacy-btn {
@@ -6318,7 +7589,7 @@ export default {
 
 /* 悬停效果 */
 .day-cell.has-data:hover {
-  transform: scale(1.15);
+  transform: scale(1.05);
   z-index: 2;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(0, 0, 0, 0.1);
@@ -6608,11 +7879,11 @@ export default {
 .reading-content :deep(li),
 .reading-content :deep(pre),
 .reading-content :deep(blockquote),
-.reading-content :deep(h1), 
-.reading-content :deep(h2), 
-.reading-content :deep(h3), 
-.reading-content :deep(h4), 
-.reading-content :deep(h5), 
+.reading-content :deep(h1),
+.reading-content :deep(h2),
+.reading-content :deep(h3),
+.reading-content :deep(h4),
+.reading-content :deep(h5),
 .reading-content :deep(h6) {
   break-inside: avoid;
   page-break-inside: avoid;
@@ -6624,7 +7895,8 @@ export default {
 /* 防止大图撑破列高导致错位 */
 .reading-content :deep(img) {
   max-width: 100%;
-  max-height: 95vh; /* 限制最大高度，留一点余地 */
+  max-height: 95vh;
+  /* 限制最大高度，留一点余地 */
   object-fit: contain;
   break-inside: avoid;
 }
@@ -6632,10 +7904,14 @@ export default {
 /* 3. 修复代码块 (PRE) */
 /* 代码块默认不换行，会导致横向撑宽页面，导致页码计算错误 */
 .reading-content :deep(pre) {
-  white-space: pre-wrap;       /* 强制换行 */
-  word-wrap: break-word;       /* 长单词换行 */
-  word-break: break-all;       /* 暴力换行防溢出 */
-  max-width: 100%;             /* 限制宽度 */
+  white-space: pre-wrap;
+  /* 强制换行 */
+  word-wrap: break-word;
+  /* 长单词换行 */
+  word-break: break-all;
+  /* 暴力换行防溢出 */
+  max-width: 100%;
+  /* 限制宽度 */
   box-sizing: border-box;
 }
 
@@ -6653,5 +7929,292 @@ export default {
   margin: 1rem 0;
   border: 0;
   border-top: 1px solid #ccc;
+}
+
+/* =========================================
+   🌙 仪表盘夜间模式适配
+   ========================================= */
+
+.dark-mode .dashboard-container {
+  background: #121212;
+}
+
+.dark-mode .dashboard-header {
+  background: #1e1e1e;
+  border-bottom-color: #333;
+}
+
+.dark-mode .back-btn {
+  color: #aaa;
+}
+
+.dark-mode .back-btn:hover {
+  color: #fff;
+}
+
+.dark-mode .header-left h1 {
+  color: #e0e0e0;
+}
+
+.dark-mode .dashboard-meta {
+  background: #2d2d2d;
+  color: #aaa;
+}
+
+/* 统计卡片 */
+.dark-mode .stat-box {
+  background: #1e1e1e;
+  border-color: #333;
+}
+
+.dark-mode .stat-box:hover {
+  border-color: #666;
+  background: #252525;
+}
+
+.dark-mode .stat-value {
+  color: #e0e0e0;
+}
+
+.dark-mode .stat-label {
+  color: #888;
+}
+
+/* 保持主卡片为亮色或反色，这里选择深灰色高亮 */
+.dark-mode .stat-box.main {
+  background: #e0e0e0;
+  border-color: #e0e0e0;
+}
+
+.dark-mode .stat-box.main .stat-value {
+  color: #000;
+  /* 反转文字颜色 */
+}
+
+.dark-mode .stat-box.main .stat-label {
+  color: #333;
+}
+
+/* 搜索框 */
+.dark-mode .dash-search-input {
+  background: #1e1e1e;
+  border-color: #333;
+  color: #e0e0e0;
+}
+
+.dark-mode .dash-search-input:focus {
+  border-color: #888;
+  background: #252525;
+}
+
+/* 角色组标题 */
+.dark-mode .char-header {
+  border-bottom-color: #333;
+}
+
+.dark-mode .char-name {
+  color: #e0e0e0;
+}
+
+.dark-mode .char-icon {
+  color: #444;
+}
+
+.dark-mode .char-stats {
+  color: #666;
+}
+
+/* 文件卡片 */
+.dark-mode .file-card {
+  background: #1e1e1e;
+  border-color: #333;
+}
+
+.dark-mode .file-card:hover {
+  border-color: #666;
+  background: #252525;
+}
+
+.dark-mode .file-card::before {
+  background: #e0e0e0;
+  /* 悬停时的左侧条 */
+}
+
+.dark-mode .file-name {
+  color: #e0e0e0;
+}
+
+.dark-mode .file-date {
+  color: #555;
+}
+
+.dark-mode .file-card:hover .file-date {
+  color: #777;
+}
+
+/* 标签适配 */
+.dark-mode .meta-tag {
+  background: #2d2d2d;
+  color: #aaa;
+}
+
+.dark-mode .meta-tag.cn {
+  background: rgba(21, 101, 192, 0.3);
+  color: #90caf9;
+}
+
+.dark-mode .meta-tag.turns {
+  background: rgba(123, 31, 162, 0.3);
+  color: #ce93d8;
+}
+
+/* 修改 .char-header 为 Flex 布局，两端对齐 */
+.char-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center; /* 垂直居中 */
+  gap: 1rem;
+  margin-bottom: 1rem; /* 减小一点间距 */
+  border-bottom: 1px solid #eee;
+  padding-bottom: 0.75rem;
+  flex-wrap: nowrap !important; /* 关键：禁止换行 */
+}
+
+/* 新增：左侧标题包裹层 */
+.char-header-left {
+  display: flex;
+  flex-direction: column; /* 名字和统计上下排布 */
+  gap: 0.25rem;
+  flex: 1; /* 占据剩余空间 */
+  min-width: 0; /* 防止文本过长撑开容器 */
+}
+
+/* 稍微调小一点按钮，显得精致 */
+.small-btn {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: fit-content;
+}
+
+/* 确保心形图标颜色正确 */
+.heart-icon {
+  font-size: 1.1em;
+  /* color: #e91e63; 如果需要图标也是粉色可以加这句，或者保持白色 */
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+
+  .char-header {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .icon-only-btn {
+    width: 32px;  /* 手机上稍微小一点 */
+    height: 32px;
+    font-size: 1.1rem;
+  }
+
+  .char-header-left {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* 手机上按钮放宽一点方便点击 */
+  .small-btn {
+    width: 100%;
+    justify-content: center;
+    margin-top: 0.5rem;
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+
+  /* 1. 外层容器：恢复绝对居中 */
+  .upload-area {
+    padding: 1.5rem !important;
+    min-height: 100vh;
+    display: flex !important;
+    align-items: center !important;
+    /* 垂直居中 */
+    justify-content: center !important;
+    /* 水平居中 */
+    padding-top: 0 !important;
+    /* 去掉之前的顶部偏移 */
+  }
+
+  /* 2. 限制容器最大宽度，但在手机上占满 */
+  .upload-container {
+    width: 100% !important;
+  }
+
+  /* 卡片间距 */
+  .upload-card {
+    margin-bottom: 1rem;
+    width: 100%;
+  }
+
+  /* 3. 卡片样式：横向长条，Grid布局 */
+  .upload-label {
+    display: grid !important;
+    /* 左侧图标自适应，右侧文字占满剩余空间 */
+    grid-template-columns: 3rem 1fr !important;
+    /* 文字分两行 */
+    grid-template-rows: auto auto !important;
+
+    padding: 1.5rem !important;
+    /* 适中的内边距 */
+    min-height: auto !important;
+    height: auto !important;
+    text-align: left !important;
+
+    /* 间距微调 */
+    column-gap: 0.5rem !important;
+    row-gap: 0.2rem !important;
+
+    /* 阴影调整，稍微柔和一点 */
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08) !important;
+  }
+
+  /* 图标：跨越两行，垂直居中 */
+  .upload-icon {
+    grid-row: 1 / 3 !important;
+    grid-column: 1 / 2 !important;
+    font-size: 2rem !important;
+    /* 图标大小 */
+    margin: 0 !important;
+    align-self: center !important;
+    justify-self: center !important;
+    color: #333;
+  }
+
+  /* 标题：第一行 */
+  .upload-text {
+    grid-row: 1 / 2 !important;
+    grid-column: 2 / 3 !important;
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    margin: 0 !important;
+    align-self: end !important;
+    /* 靠下对齐，紧贴描述 */
+    line-height: 1.2;
+  }
+
+  /* 描述：第二行 */
+  .upload-hint {
+    grid-row: 2 / 3 !important;
+    grid-column: 2 / 3 !important;
+    font-size: 0.85rem !important;
+    margin: 0 !important;
+    align-self: start !important;
+    /* 靠上对齐 */
+    opacity: 0.6;
+    line-height: 1.2;
+  }
 }
 </style>
