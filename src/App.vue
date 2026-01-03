@@ -3,7 +3,7 @@
 
     <div v-if="viewMode === 'home'" class="upload-area">
       <div class="upload-container">
-        <div class="upload-card single-upload">
+        <div v-if="!loadingStatus" class="upload-card single-upload">
           <input type="file" ref="fileInput" @change="handleFileUpload" accept=".jsonl" id="file-input"
             class="file-input" />
           <label for="file-input" class="upload-label">
@@ -13,7 +13,7 @@
           </label>
         </div>
 
-        <div class="upload-card zip-upload">
+        <div v-if="!loadingStatus" class="upload-card zip-upload">
           <input type="file" ref="zipInput" @change="handleZipUpload" accept=".zip" id="zip-input" class="file-input" />
           <label for="zip-input" class="upload-label">
             <Icon icon="bi:file-earmark-zip" class="upload-icon" />
@@ -314,7 +314,7 @@
         <div class="regex-header">
           <h2>正则脚本管理</h2>
           <div class="regex-actions">
-            <button @click="importScripts" class="btn btn-secondary">导入JSON</button>
+            <button @click="importScripts" class="btn btn-secondary">导入正则</button>
             <button @click="importFromCardOrPreset" class="btn btn-secondary">从角色卡/预设导入</button>
             <button @click="exportScripts" class="btn btn-secondary" :disabled="!regexScripts.length">导出</button>
             <button @click="addNewScript" class="btn btn-primary">添加脚本</button>
@@ -3920,23 +3920,22 @@ export default {
     // === 新增：打开仪表盘角色的亲密度弹窗 ===
     openDashboardIntimacy(charName, files) {
       // 1. 初始化数据容器
-      const mergedDateMap = {}; // 合并所有文件的日期数据
-      let totalRerolls = 0;
-      let totalChars = 0;
-      let totalMessages = 0;
-
+      const mergedDateMap = {}; 
+      
       // 2. 遍历该角色的所有文件进行汇总
+      // 注意：这里先不急着算总数，我们后面统一通过 map 算更准确，或者保留 files 里的 reroll
+      let totalRerolls = 0;
+
       files.forEach(f => {
-        totalRerolls += (f.rerolls || 0);
-        totalChars += (f.effectiveCN || 0);
-        totalMessages += (f.totalTurns || 0);
+        // Reroll 数据通常只存在于文件元数据中，不一定在 dateMap 里，所以这里必须累加
+        // 兼容不同的字段名 (rerolls 或 totalRerolls)
+        totalRerolls += (f.rerolls || f.totalRerolls || 0);
 
         if (f.dateMap) {
           Object.entries(f.dateMap).forEach(([dateKey, stats]) => {
             if (!mergedDateMap[dateKey]) {
               mergedDateMap[dateKey] = { count: 0, chars: 0 };
             }
-            // 兼容旧数据格式（如果是纯数字）或新格式（对象）
             if (typeof stats === 'number') {
               mergedDateMap[dateKey].count += stats;
             } else {
@@ -3947,42 +3946,41 @@ export default {
         }
       });
 
-      // 3. 计算日期范围
-      const sortedDates = Object.keys(mergedDateMap).sort();
-      let firstDateStr = '';
-      let daysSince = 0;
+      // 3. 统计全量数据（计算最大值、总消息数、总字符数）
+      let maxDailyCount = 0;
+      let totalMsgCount = 0;
+      let totalCharCount = 0;
 
+      Object.values(mergedDateMap).forEach(val => {
+         if (val.count > maxDailyCount) maxDailyCount = val.count;
+         totalMsgCount += val.count;
+         totalCharCount += val.chars;
+      });
+
+      // 4. 计算日期范围
+      const sortedDates = Object.keys(mergedDateMap).sort();
+      let daysSince = 0;
       if (sortedDates.length > 0) {
-        firstDateStr = sortedDates[0]; // YYYY-MM-DD
-        const first = new Date(firstDateStr);
+        const first = new Date(sortedDates[0]);
         const now = new Date();
         daysSince = Math.floor((now - first) / (24 * 3600 * 1000));
-
-        // 格式化一下显示用的日期
         this.intimacyData.firstDate = `${first.getFullYear()}/${first.getMonth() + 1}/${first.getDate()}`;
       } else {
         this.intimacyData.firstDate = '未知';
       }
 
-      // 4. 填充基础统计数据
+      // === 5. 关键修复：在计算完成后再赋值给组件数据 ===
       this.intimacyData.daysSince = daysSince;
       this.intimacyData.activeDays = sortedDates.length;
-      this.intimacyData.totalMessages = totalMessages;
-      this.intimacyData.totalChars = totalChars;
+      this.intimacyData.totalMessages = totalMsgCount; // 现在是有值的了
+      this.intimacyData.totalChars = totalCharCount;   // 现在是有值的了
       this.intimacyData.totalRerolls = totalRerolls;
 
-      // 在步骤 5 生成日历数据之前，先算最大值
-      let maxDailyCount = 0;
-      Object.values(mergedDateMap).forEach(val => {
-        if (val.count > maxDailyCount) maxDailyCount = val.count;
-      });
-
-      // 定义颜色：弹窗里也可以用一样的，或者稍微深情一点的颜色
+      // 定义颜色
       const colorStart = [248, 187, 208];
-      const colorEnd = [194, 24, 91]; // #c2185b
+      const colorEnd = [194, 24, 91];
 
-      // 5. 生成日历数据 (复用逻辑)
-      // 我们需要把 mergedDateMap 转换成 calendarMonths 结构
+      // 6. 生成日历数据
       if (sortedDates.length > 0) {
         const start = new Date(sortedDates[0]);
         const end = new Date(sortedDates[sortedDates.length - 1]);
@@ -4009,7 +4007,10 @@ export default {
 
             const data = mergedDateMap[dateKey] || { count: 0, chars: 0 };
 
-            // === 修改核心：计算颜色 ===
+            // === 关键修复：这里必须累加月度数据 ===
+            monthTotalCount += data.count;
+            monthTotalChars += data.chars;
+
             const bgStyle = this.getGradientColor(data.count, maxDailyCount, colorStart, colorEnd);
 
             days.push({
@@ -4017,7 +4018,7 @@ export default {
               dateStr: dateKey,
               count: data.count,
               chars: data.chars,
-              bgStyle: bgStyle // <--- 存入
+              bgStyle: bgStyle
             });
           }
 
@@ -4026,7 +4027,7 @@ export default {
             month: currentMonth + 1,
             paddingStart: paddingStart,
             days: days,
-            totalCount: monthTotalCount,
+            totalCount: monthTotalCount, // 现在这里有值了
             totalChars: monthTotalChars
           });
 
@@ -4042,7 +4043,6 @@ export default {
         this.intimacyData.calendarMonths = [];
       }
 
-      // 6. 打开弹窗
       this.showIntimacyModal = true;
     },
 
