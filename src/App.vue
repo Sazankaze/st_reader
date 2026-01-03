@@ -35,11 +35,11 @@
           <button @click="resetReader" class="back-btn">
             <Icon icon="akar-icons:arrow-left" /> 返回首页
           </button>
-          
+
           <div class="header-title-row">
             <h1>数据档案</h1>
             <div class="dashboard-meta">
-               共 {{ dashboardData.totalFiles }} 个文件
+              共 {{ dashboardData.totalFiles }} 个文件
             </div>
           </div>
         </div>
@@ -51,7 +51,7 @@
             <div class="hero-value">{{ dashboardData.totalEffectiveCN.toLocaleString() }}</div>
             <div class="hero-label">有效汉字总数 (仅供参考)</div>
           </div>
-          
+
           <div class="stat-divider"></div>
 
           <div class="stat-sub-row">
@@ -73,16 +73,24 @@
         </div>
 
         <div class="dashboard-calendar-section" v-if="dashboardCalendar.months.length > 0">
+
           <div class="dash-cal-header">
             <div class="dash-cal-title">
               <Icon icon="bi:calendar-check" /> 酒馆日记
             </div>
+
             <div class="dash-cal-meta">
               活跃 {{ dashboardCalendar.activeDays }} 天 · 累计 {{ dashboardCalendar.totalMessages }} 条消息
             </div>
+
+            <button class="view-toggle-btn"
+              @click="calendarViewMode = (calendarViewMode === 'month' ? 'year' : 'month')">
+              <Icon :icon="calendarViewMode === 'month' ? 'bi:grid-3x3' : 'bi:calendar-date'" />
+              {{ calendarViewMode === 'month' ? '切换年视图' : '切换月视图' }}
+            </button>
           </div>
 
-          <div class="calendar-widget dashboard-widget">
+          <div v-if="calendarViewMode === 'month'" class="calendar-widget dashboard-widget">
             <div class="calendar-nav">
               <button @click="prevDashMonth"
                 :disabled="dashboardCalendar.currentMonthIdx >= dashboardCalendar.months.length - 1"
@@ -133,11 +141,57 @@
               </div>
             </div>
           </div>
-        </div>
-        <div class="filter-bar">
-          <input v-model="dashboardSearch" type="text" placeholder="搜索角色名或文件名..." class="dash-search-input" />
-        </div>
 
+          <div v-else class="heatmap-widget">
+
+            <div class="calendar-nav">
+              <button @click="prevHeatmapYear" :disabled="currentHeatmapYear <= heatmapYears[0]"
+                class="nav-btn">◀</button>
+
+              <div class="current-month-label">
+                {{ currentHeatmapYear }} 年度全景
+              </div>
+
+              <button @click="nextHeatmapYear" :disabled="currentHeatmapYear >= heatmapYears[heatmapYears.length - 1]"
+                class="nav-btn">▶</button>
+            </div>
+
+            <div class="heatmap-scroll-container">
+              <div class="heatmap-grid">
+                <div class="heatmap-week-labels">
+                  <span>日</span><span>&nbsp;</span><span>二</span><span>&nbsp;</span><span>四</span><span>&nbsp;</span><span>六</span>
+                </div>
+
+                <template v-if="currentHeatmapYear && heatmapData[currentHeatmapYear]">
+                  <div v-for="(week, wIndex) in heatmapData[currentHeatmapYear]" :key="wIndex" class="heatmap-col">
+                    <div v-for="(day, dIndex) in week" :key="dIndex"
+                      :class="['heatmap-cell', { 'empty': !day || !day.hasData }]"
+                      :style="{ backgroundColor: (day && day.hasData) ? day.bgStyle : '' }"
+                      @mouseenter="day && showDayTooltip($event, day)" @mouseleave="hideDayTooltip"
+                      @mousemove="moveDayTooltip($event)">
+                    </div>
+                  </div>
+                </template>
+
+                <div v-else style="padding: 20px; color:#999; font-size:0.9rem;">
+                  暂无数据
+                </div>
+              </div>
+            </div>
+
+            <div class="heatmap-footer">
+              <div class="heatmap-legend">
+                <span>少</span>
+                <span class="legend-item level-1" style="background: rgb(248, 187, 208)"></span>
+                <span class="legend-item level-2" style="background: rgb(233, 30, 99)"></span>
+                <span class="legend-item level-3" style="background: rgb(136, 14, 79)"></span>
+                <span>多</span>
+              </div>
+              <div class="heatmap-hint"> * 包含 {{ heatmapData[currentHeatmapYear]?.length || 0 }} 周 </div>
+            </div>
+          </div>
+
+        </div>
         <div class="character-groups">
           <div v-for="(files, charName) in filteredDashboardGroups" :key="charName" class="char-group">
             <div class="char-header">
@@ -147,11 +201,12 @@
                   {{ charName }}
                 </div>
                 <div class="char-stats">
-                  {{ files.length }} 个会话 · {{ (files.reduce((a, b) => a + b.effectiveCN, 0)).toLocaleString() }} 字
+                  {{ files.length }} 个会话 · {{(files.reduce((a, b) => a + b.effectiveCN, 0)).toLocaleString()}} 字
                 </div>
               </div>
-              
-              <button @click.stop="openDashboardIntimacy(charName, files)" class="action-button intimacy-btn icon-only-btn" title="查看亲密度">
+
+              <button @click.stop="openDashboardIntimacy(charName, files)"
+                class="action-button intimacy-btn icon-only-btn" title="查看亲密度">
                 <Icon icon="bxs:heart" class="heart-icon" />
               </button>
             </div>
@@ -245,174 +300,113 @@
         </div>
       </div>
 
-      <div v-if="showTagFilterManager" class="regex-manager tag-filter-manager">
-        <div class="regex-header">
-          <h2>标签过滤（优先于正则）</h2>
-          <div class="regex-actions">
-            <button @click="addNewTagFilter" class="btn btn-primary">添加过滤</button>
-          </div>
-        </div>
-
-        <div v-if="tagFilterForm.id" class="script-form">
-          <div class="form-group">
-            <label>过滤器名称</label>
-            <input v-model="tagFilterForm.name" type="text" placeholder="如：移除思维链" />
-          </div>
-          <div class="form-group">
-            <label>标签名（不含尖括号）</label>
-            <input v-model="tagFilterForm.tagName" type="text" placeholder="如：think 或 thinking" />
-            <div class="form-hint">支持多个标签，用逗号分隔，如：think,thinking,disclaimer</div>
-          </div>
-          <div class="form-group">
-            <label>过滤模式</label>
-            <select v-model="tagFilterForm.mode" class="form-select">
-              <option value="remove">删除这些标签及其内容</option>
-              <option value="keep">只保留这些标签内的内容</option>
-              <option value="unwrap">移除标签但保留内容</option>
-            </select>
-          </div>
-          <div class="form-group checkbox-group">
-            <label>
-              <input v-model="tagFilterForm.disabled" type="checkbox" />
-              禁用此过滤器
-            </label>
-          </div>
-          <div class="form-buttons">
-            <button @click="cancelEditTagFilter" class="btn btn-secondary">取消</button>
-            <button @click="saveTagFilter" class="btn btn-primary">保存</button>
-          </div>
-        </div>
-
-        <div class="script-list">
-          <div v-if="!tagFilters.length" class="no-scripts">
-            暂无标签过滤器，点击"添加过滤"来创建
-          </div>
-          <div v-for="(filter, index) in tagFilters" :key="filter.id"
-            :class="['script-item', { 'disabled': filter.disabled }]">
-            <div class="script-info">
-              <div class="script-name">{{ filter.name }}</div>
-              <div class="script-regex">
-                {{ filter.mode === 'remove' ? '删除' : filter.mode === 'keep' ? '只保留' : '解包' }}:
-                &lt;{{ filter.tagName }}&gt;
-              </div>
-            </div>
-            <div class="script-controls">
-              <button @click="moveTagFilterUp(index)" :disabled="index === 0" class="btn-icon" title="上移">↑</button>
-              <button @click="moveTagFilterDown(index)" :disabled="index === tagFilters.length - 1" class="btn-icon"
-                title="下移">↓</button>
-              <button @click="toggleTagFilter(filter)" :class="['btn-toggle', { 'active': !filter.disabled }]">
-                {{ filter.disabled ? '已禁用' : '已启用' }}
-              </button>
-              <button @click="editTagFilter(filter)" class="btn-icon" title="编辑">✎</button>
-              <button @click="deleteTagFilter(filter.id)" class="btn-icon btn-danger" title="删除">✕</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="showRegexManager" class="regex-manager">
-        <div class="regex-header">
-          <h2>正则脚本管理</h2>
-          <div class="regex-actions">
-            <button @click="importScripts" class="btn btn-secondary">导入正则</button>
-            <button @click="importFromCardOrPreset" class="btn btn-secondary">从角色卡/预设导入</button>
-            <button @click="exportScripts" class="btn btn-secondary" :disabled="!regexScripts.length">导出</button>
-            <button @click="addNewScript" class="btn btn-primary">添加脚本</button>
-          </div>
-        </div>
-
-        <div v-if="scriptForm.id" class="script-form">
-          <div class="form-group">
-            <label>脚本名称</label>
-            <input v-model="scriptForm.scriptName" type="text" placeholder="如：移除思维链内容" />
-          </div>
-          <div class="form-group">
-            <label>正则表达式</label>
-            <textarea v-model="scriptForm.findRegex" placeholder="如：/(<think>[\s\S]*?</think>)/gs" rows="3"></textarea>
-            <div class="form-hint">支持格式：/pattern/flags 或直接输入模式（默认添加 g 标志）</div>
-          </div>
-          <div class="form-group">
-            <label>替换内容</label>
-            <input v-model="scriptForm.replaceString" type="text" placeholder="留空表示删除匹配内容" />
-          </div>
-          <div class="form-group checkbox-group">
-            <label>
-              <input v-model="scriptForm.disabled" type="checkbox" />
-              禁用此脚本
-            </label>
-          </div>
-          <div class="form-buttons">
-            <button @click="cancelEdit" class="btn btn-secondary">取消</button>
-            <button @click="saveScript" class="btn btn-primary">保存</button>
-          </div>
-        </div>
-
-        <div class="script-list">
-          <div v-if="!regexScripts.length" class="no-scripts">
-            暂无正则脚本，点击"添加脚本"或"导入"来创建
-          </div>
-          <div v-for="(script, index) in regexScripts" :key="script.id"
-            :class="['script-item', { 'disabled': script.disabled, 'dragging': dragIndex === index }]" draggable="true"
-            @dragstart="handleDragStart(index)" @dragover="handleDragOver" @drop="(e) => handleDrop(e, index)"
-            @dragend="handleDragEnd">
-            <div class="script-drag-handle">⋮⋮</div>
-            <div class="script-info">
-              <div class="script-name">{{ script.scriptName }}</div>
-              <div class="script-regex">{{ script.findRegex.substring(0, 60) }}{{ script.findRegex.length > 60 ? '...'
-                :
-                '' }}
-              </div>
-            </div>
-            <div class="script-controls">
-              <button @click="moveScriptUp(index)" :disabled="index === 0" class="btn-icon" title="上移">↑</button>
-              <button @click="moveScriptDown(index)" :disabled="index === regexScripts.length - 1" class="btn-icon"
-                title="下移">↓</button>
-              <button @click="toggleScript(script)" :class="['btn-toggle', { 'active': !script.disabled }]">
-                {{ script.disabled ? '已禁用' : '已启用' }}
-              </button>
-              <button @click="editScript(script)" class="btn-icon" title="编辑">✎</button>
-              <button @click="deleteScript(script.id)" class="btn-icon btn-danger" title="删除">✕</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div v-if="showFavoritesPanel" class="regex-manager favorites-panel">
-        <div class="regex-header">
-          <h2>收藏夹</h2>
-          <div class="regex-actions">
-            <button @click="exportFavorites" class="btn btn-secondary" :disabled="!favorites.length">导出</button>
-            <button @click="clearAllFavorites" class="btn btn-secondary" :disabled="!favorites.length">清空</button>
+
+        <div class="fav-header-minimal">
+          <h2 style="margin:0 0 10px 0; font-size:1.1rem;">收藏夹</h2>
+
+          <div class="fav-toolbar">
+            <div class="fav-tabs-simple">
+              <button @click="switchToCurrentFavorites" :class="['simple-tab', { active: !viewingGlobalFavorites }]">
+                当前文件
+              </button>
+              <button @click="switchToGlobalFavorites" :class="['simple-tab', { active: viewingGlobalFavorites }]">
+                全部文件
+              </button>
+            </div>
+
+            <div class="fav-actions-simple">
+              <template v-if="!viewingGlobalFavorites">
+                <button @click="triggerImportFavorites" class="btn btn-secondary btn-xs">导入</button>
+                <button @click="exportFavorites" class="btn btn-secondary btn-xs"
+                  :disabled="!favorites.length">导出</button>
+                <button @click="clearAllFavorites" class="btn btn-secondary btn-xs"
+                  :disabled="!favorites.length">清空</button>
+              </template>
+              <template v-else>
+                <button @click="exportGlobalFavorites" class="btn btn-primary btn-xs">导出全部</button>
+              </template>
+            </div>
           </div>
         </div>
-        <div class="script-list favorites-list">
+
+        <div v-if="!viewingGlobalFavorites" class="script-list favorites-list">
           <div v-if="!favorites.length" class="no-scripts">
-            暂无收藏，点击消息右上角的 ☆ 收藏整条消息，或选中文字后点击"收藏"
+            当前文件暂无收藏
+            <br><span style="font-size:0.8em; opacity:0.7">（选中正文文字即可收藏句子，或点击楼层右上角收藏整楼）</span>
           </div>
+
           <div v-for="fav in favorites" :key="fav.id" class="favorite-item" @click="navigateToFavorite(fav)"
             title="点击跳转到对应楼层">
             <div class="favorite-content">
               <div class="favorite-type">
                 <template v-if="fav.type === 'message'">
-                  <Icon icon="icon-park-twotone:copy" style="vertical-align: -2px;" /> 楼层
+                  <Icon icon="icon-park-twotone:copy" style="vertical-align: -2px; margin-right:2px;" />
+                  <span style="font-weight:bold; margin-right:4px;">楼层</span>
                 </template>
                 <template v-else>
-                  <Icon icon="ri:draft-line" style="vertical-align: -2px;" /> 句子
+                  <Icon icon="ri:draft-line" style="vertical-align: -2px; margin-right:2px;" />
+                  <span style="font-weight:bold; margin-right:4px;">句子</span>
                 </template>
-                #{{ fav.messageIndex + 1 }}
+                <span style="color:#999; font-size:0.9em;">#{{ fav.messageIndex + 1 }}</span>
               </div>
-              <div class="favorite-text">{{ fav.text.substring(0, 100) }}{{ fav.text.length > 100 ? '...' : '' }}
-              </div>
+
+              <div class="favorite-text">{{ fav.text.substring(0, 100) }}{{ fav.text.length > 100 ? '...' : '' }}</div>
+
               <div class="favorite-meta">
-                <span v-if="fav.speaker">{{ fav.speaker }}</span>
+                <span v-if="fav.speaker" style="font-weight:bold; color:#555;">{{ fav.speaker }}</span>
                 <span>{{ formatFavoriteTime(fav.createdAt) }}</span>
               </div>
             </div>
+
             <div class="favorite-actions">
               <button @click.stop="copyFavorite(fav)" class="btn-icon" title="复制">
-                <Icon icon="icon-park-twotone:copy" style="vertical-align: -2px;" />
+                <Icon icon="icon-park-twotone:copy" />
               </button>
               <button @click.stop="deleteFavorite(fav.id)" class="btn-icon btn-danger" title="删除">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="script-list favorites-list">
+          <div v-if="!globalFavoritesList.length" class="no-scripts">
+            数据库中没有任何收藏记录
+          </div>
+
+          <div v-for="group in globalFavoritesList" :key="group.fileName" style="margin-bottom:15px;">
+            <div
+              style="background:#f9f9f9; padding:6px 10px; font-weight:bold; font-size:0.85rem; border-bottom:1px solid #eee; color:#444; display:flex; align-items:center; gap:5px;">
+              <Icon icon="bi:file-earmark-text" /> {{ group.fileName }}
+            </div>
+
+            <div v-for="fav in group.items" :key="fav.id" class="favorite-item">
+              <div class="favorite-content">
+                <div class="favorite-type">
+                  <template v-if="fav.type === 'message'">
+                    <Icon icon="icon-park-twotone:copy" style="vertical-align: -2px; margin-right:2px;" />
+                    <span style="font-weight:bold;">楼层</span>
+                  </template>
+                  <template v-else>
+                    <Icon icon="ri:draft-line" style="vertical-align: -2px; margin-right:2px;" />
+                    <span style="font-weight:bold;">句子</span>
+                  </template>
+                  <span style="color:#999; margin-left:5px;">#{{ fav.messageIndex + 1 }}</span>
+
+                  <span v-if="group.fileName !== currentFileName"
+                    style="color:#e91e63; font-size:0.7rem; margin-left:8px; border:1px solid #e91e63; padding:0 3px; border-radius:3px; opacity:0.8;">
+                    只读
+                  </span>
+                </div>
+
+                <div class="favorite-text" style="color:#666;">{{ fav.text.substring(0, 80) }}...</div>
+              </div>
+              <div class="favorite-actions">
+                <button @click.stop="copyFavorite(fav)" class="btn-icon" title="复制">
+                  <Icon icon="icon-park-twotone:copy" />
+                </button>
+                <button @click.stop="deleteGlobalFavorite(group.fileName, fav.id)" class="btn-icon btn-danger"
+                  title="删除">✕</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1069,6 +1063,17 @@ export default {
       },
       // 阅读模式能不能不要再错位了
       resizeObserver: null,
+      // 当前文件标识
+      currentFileName: '',
+      // === 新增：日历视图控制 ===
+      calendarViewMode: 'month', // 'month' (月视图) | 'year' (年/全景视图)
+      heatmapData: {},    // ✅ 改为对象：{ 2024: [weeks...], 2025: [weeks...] }
+      heatmapYears: [],   // 存放所有有数据的年份 [2023, 2024, 2025]
+      currentHeatmapYear: null, // 当前选中的年份
+
+      // === 新增：全局收藏夹状态 ===
+      viewingGlobalFavorites: false, // 是否正在查看全局
+      globalFavoritesList: [],       // 存放全局数据的数组
     };
   },
   computed: {
@@ -1124,12 +1129,12 @@ export default {
       return { start, end };
     }
   },
-  mounted() {
-    console.log(this.viewMode);
-    // 确保 body 可以滚动（可能上次退出时未正确重置）
-    document.body.style.overflow = '';
+  // 替换整个 mounted()
+  async mounted() {
+    console.log('App mounted, viewMode:', this.viewMode);
 
-    // 从 localStorage 加载正则脚本和标签过滤器
+    // 1. 基础初始化 (保留你原有的逻辑)
+    document.body.style.overflow = '';
     this.loadScriptsFromStorage();
     this.loadTagFiltersFromStorage();
     this.loadFavoritesFromStorage();
@@ -1137,14 +1142,63 @@ export default {
     this.loadStylesFromStorage();
     this.loadDarkMode();
     this.loadCustomFonts();
-
-    // 替换HTML占位符
     this.replaceHTMLPlaceholders();
 
-    // 点击其他地方关闭选择菜单
     document.addEventListener('mousedown', this.hideSelectionMenu);
-
     window.addEventListener('keydown', this.handleKeydown);
+
+    // 2. === 自动恢复会话逻辑 (带详细日志) ===
+    console.log('开始尝试恢复会话...');
+    try {
+      const session = await this.getFromDB('currentSession');
+
+      if (session) {
+        console.log('找到缓存的会话:', session.type, session.fileName);
+        this.loadingStatus = '正在恢复上次的记录...';
+
+        if (session.type === 'single') {
+          // 恢复单文件
+          if (session.content) {
+            this.parseJSONL(session.content);
+            this.viewMode = 'reader';
+            this.fromDashboard = false;
+            // 恢复元数据
+            if (session.metadata) this.metadata = session.metadata;
+            console.log('单文件恢复成功');
+          } else {
+            console.warn('缓存数据中缺少 content 字段');
+          }
+          // 🔴 恢复文件名
+          if (session.fileName) {
+            this.currentFileName = session.fileName;
+            await this.loadFavoritesFromStorage();
+          }
+        }
+        else if (session.type === 'dashboard') {
+          // 恢复仪表盘
+          if (session.dashboardData) {
+            this.dashboardData = session.dashboardData;
+            this.dashboardCalendar = session.dashboardCalendar || { months: [], currentMonthIdx: 0, totalMessages: 0, activeDays: 0 };
+            this.heatmapData = session.heatmapData || [];
+
+            if (session.blob) {
+              // 重新加载 ZIP 对象
+              const zip = await JSZip.loadAsync(session.blob);
+              this.zipFileCache = zip;
+            }
+            this.viewMode = 'dashboard';
+            console.log('仪表盘恢复成功');
+          }
+        }
+
+        this.loadingStatus = '';
+      } else {
+        console.log('IndexedDB 中没有找到 currentSession，保持在首页。');
+      }
+    } catch (e) {
+      console.error('自动恢复会话时出错:', e);
+      this.loadingStatus = '';
+    }
   },
 
   updated() {
@@ -1252,6 +1306,23 @@ export default {
         this.dashboardData = stats;
         this.viewMode = 'dashboard';
         this.loadingStatus = '';
+
+        // 2. === 新增：解析完成后保存 Blob 到 IndexedDB ===
+        try {
+          // 保存 ZIP 的原始 Blob 和计算好的统计数据
+          // 这样下次加载时，统计数据可以直接用，不用重新计算，只有点开文件时才解压
+          await this.saveToDB('currentSession', {
+            type: 'dashboard',
+            fileName: file.name,
+            blob: file, // 关键：保存文件对象
+            dashboardData: JSON.parse(JSON.stringify(this.dashboardData)),
+            dashboardCalendar: JSON.parse(JSON.stringify(this.dashboardCalendar)),
+            heatmapData: JSON.parse(JSON.stringify(this.heatmapData)),
+          });
+          console.log('ZIP数据已缓存');
+        } catch (err) {
+          console.warn('ZIP缓存失败(可能文件太大):', err);
+        }
 
       } catch (e) {
         console.error('ZIP 解析失败:', e);
@@ -1370,6 +1441,9 @@ export default {
         const content = await file.async('text');
         this.parseJSONL(content); // 调用你原有的解析逻辑
 
+        this.currentFileName = fileData.fileName; // 从 fileData 获取文件名
+        await this.loadFavoritesFromStorage(); // 加载该文件的收藏
+
         this.viewMode = 'reader'; // 进入阅读模式
         this.fromDashboard = true; // 标记来源
         this.loadingStatus = '';
@@ -1386,36 +1460,43 @@ export default {
     },
 
     // === 新增方法 ===
+    // === 替换 methods 中的 generateDashboardCalendarData ===
+    // === 替换 methods 中的 generateDashboardCalendarData ===
     generateDashboardCalendarData(globalDateMap) {
       const dates = Object.keys(globalDateMap).sort();
       if (dates.length === 0) {
         this.dashboardCalendar = { months: [], currentMonthIdx: 0, totalMessages: 0, activeDays: 0 };
+        this.heatmapData = {};
+        this.heatmapYears = [];
         return;
       }
 
-      // 1. 先遍历一遍找出【全局最大值】，用于计算颜色的相对比例
+      // === 辅助：安全解析日期 (解决时区问题) ===
+      const parseLocal = (dateStr) => {
+        const parts = dateStr.split(/[-/]/).map(Number);
+        if (parts.length !== 3) return new Date();
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+      };
+
+      // 1. 计算最大值 (用于颜色)
       let maxDailyCount = 0;
       Object.values(globalDateMap).forEach(data => {
-        // 兼容数据格式：可能是 {count, chars} 也可能是数字
         const count = typeof data === 'number' ? data : data.count;
         if (count > maxDailyCount) maxDailyCount = count;
       });
-
-      // 定义渐变颜色范围 (RGB数组)
-      // 浅粉色 (#f8bbd0) -> 深紫红 (#880e4f)
       const colorStart = [248, 187, 208];
       const colorEnd = [136, 14, 79];
 
+      // 2. === 生成月视图数据 ===
       const firstDateStr = dates[0];
       const lastDateStr = dates[dates.length - 1];
 
-      const start = new Date(firstDateStr);
-      const end = new Date(lastDateStr);
+      const start = parseLocal(firstDateStr);
+      const end = parseLocal(lastDateStr);
 
       const monthsData = [];
       let currentYear = start.getFullYear();
       let currentMonth = start.getMonth();
-
       const endYear = end.getFullYear();
       const endMonth = end.getMonth();
 
@@ -1428,31 +1509,24 @@ export default {
 
         const days = [];
         let monthTotalCount = 0;
-        let monthTotalChars = 0; // 新增：月总字数
+        let monthTotalChars = 0;
 
         for (let d = 1; d <= daysInMonth; d++) {
           const mStr = String(currentMonth + 1).padStart(2, '0');
           const dStr = String(d).padStart(2, '0');
           const dateKey = `${currentYear}-${mStr}-${dStr}`;
 
-          // 获取数据对象
           const data = globalDateMap[dateKey] || { count: 0, chars: 0 };
-          const count = data.count;
-          const chars = data.chars;
-
-          monthTotalCount += count;
-          monthTotalChars += chars;
-          totalMessages += count;
-
-          // === 修改核心：不再计算 level，而是直接计算 color ===
-          const bgStyle = this.getGradientColor(count, maxDailyCount, colorStart, colorEnd);
+          monthTotalCount += data.count;
+          monthTotalChars += data.chars;
+          totalMessages += data.count;
 
           days.push({
             dayNum: d,
             dateStr: dateKey,
-            count: count,
-            chars: chars,
-            bgStyle: bgStyle // <--- 存入具体的颜色字符串
+            count: data.count,
+            chars: data.chars,
+            bgStyle: data.count > 0 ? this.getGradientColor(data.count, maxDailyCount, colorStart, colorEnd) : ''
           });
         }
 
@@ -1462,20 +1536,84 @@ export default {
           paddingStart: paddingStart,
           days: days,
           totalCount: monthTotalCount,
-          totalChars: monthTotalChars // 新增：存入月总字数
+          totalChars: monthTotalChars
         });
 
-        currentMonth++;
-        if (currentMonth > 11) {
+        if (currentMonth === 11) {
           currentMonth = 0;
           currentYear++;
+        } else {
+          currentMonth++;
         }
       }
 
-      this.dashboardCalendar.months = monthsData.reverse();
-      this.dashboardCalendar.currentMonthIdx = 0;
-      this.dashboardCalendar.totalMessages = totalMessages;
-      this.dashboardCalendar.activeDays = dates.length;
+      this.dashboardCalendar = {
+        months: monthsData.reverse(),
+        currentMonthIdx: 0,
+        totalMessages: totalMessages,
+        activeDays: dates.length
+      };
+
+      // 3. === 生成年视图 (GitHub 热力图) ===
+      const hmStart = parseLocal(dates[0]);
+      const hmEnd = parseLocal(dates[dates.length - 1]);
+
+      const hmStartYear = hmStart.getFullYear();
+      const hmEndYear = hmEnd.getFullYear();
+
+      const yearlyData = {};
+      const yearsList = [];
+
+      for (let y = hmStartYear; y <= hmEndYear; y++) {
+        yearsList.push(y);
+
+        const yearStart = new Date(y, 0, 1);
+        const yearEnd = new Date(y, 11, 31);
+        const weeks = [];
+        let currentWeek = new Array(7).fill(null);
+        let curr = new Date(yearStart);
+
+        while (curr <= yearEnd) {
+          const m = String(curr.getMonth() + 1).padStart(2, '0');
+          const d = String(curr.getDate()).padStart(2, '0');
+          const dateKey = `${y}-${m}-${d}`;
+          const dayOfWeek = curr.getDay();
+
+          let data = globalDateMap[dateKey];
+          if (!data) data = globalDateMap[`${y}/${m}/${d}`];
+          data = data || { count: 0, chars: 0 };
+
+          const bgStyle = data.count > 0
+            ? this.getGradientColor(data.count, maxDailyCount, colorStart, colorEnd)
+            : null;
+
+          currentWeek[dayOfWeek] = {
+            dateStr: dateKey,
+            hasData: data.count > 0,
+            count: data.count,
+
+            // ✅ 修复：加上了这一行！
+            chars: data.chars || 0,
+
+            bgStyle: bgStyle
+          };
+
+          const isLastDayOfYear = (curr.getTime() === yearEnd.getTime());
+
+          if (dayOfWeek === 6 || isLastDayOfYear) {
+            weeks.push(currentWeek);
+            currentWeek = new Array(7).fill(null);
+          }
+
+          curr.setDate(curr.getDate() + 1);
+        }
+
+        yearlyData[y] = weeks;
+      }
+
+      this.heatmapData = yearlyData;
+      this.heatmapYears = yearsList;
+      this.currentHeatmapYear = hmEndYear;
     },
 
     // 仪表盘日历翻页方法
@@ -1487,6 +1625,20 @@ export default {
     nextDashMonth() {
       if (this.dashboardCalendar.currentMonthIdx > 0) {
         this.dashboardCalendar.currentMonthIdx--;
+      }
+    },
+
+    prevHeatmapYear() {
+      const idx = this.heatmapYears.indexOf(this.currentHeatmapYear);
+      if (idx > 0) {
+        this.currentHeatmapYear = this.heatmapYears[idx - 1];
+      }
+    },
+
+    nextHeatmapYear() {
+      const idx = this.heatmapYears.indexOf(this.currentHeatmapYear);
+      if (idx < this.heatmapYears.length - 1) {
+        this.currentHeatmapYear = this.heatmapYears[idx + 1];
       }
     },
 
@@ -1566,10 +1718,26 @@ export default {
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = (e) => {
-        this.parseJSONL(e.target.result);
-        this.viewMode = 'reader'; // 确保切换到 reader 模式
+      reader.onload = async (e) => {
+        const content = e.target.result;
+        this.parseJSONL(content);
+        this.currentFileName = file.name; // 记录文件名
+        await this.loadFavoritesFromStorage(); // 加载该文件的收藏
+        this.viewMode = 'reader';
         this.fromDashboard = false;
+
+        // === 新增：保存到 IndexedDB ===
+        try {
+          await this.saveToDB('currentSession', {
+            type: 'single',
+            fileName: file.name,
+            content: content,
+            metadata: JSON.parse(JSON.stringify(this.metadata))
+          });
+          console.log('单文件已缓存');
+        } catch (err) {
+          console.error('缓存失败', err);
+        }
       };
       reader.readAsText(file);
     },
@@ -1989,15 +2157,27 @@ export default {
       return `${year}-${month}-${day} ${hours}:${minutes}`;
     },
 
-    resetReader() {
-      this.viewMode = 'home'; // 回到首页
-      this.resetReaderStateOnly();
+    async resetReader() {
 
+      const confirmMsg = '⚠️【警告】即将关闭阅读器\n\n' +
+        '此操作将清空当前的会话缓存。\n' +
+        '如果您有未导出的收藏夹数据，可能会因此丢失。\n\n' +
+        '请确认：您是否已经备份了重要数据？';
+
+      if (!confirm(confirmMsg)) {
+        return; // 用户点击取消，终止操作
+      }
+      // ... 原有的重置逻辑 ...
+      this.viewMode = 'home';
+      this.resetReaderStateOnly();
       this.zipFileCache = null;
       this.dashboardData = { totalFiles: 0, groups: {} };
 
-      if (this.$refs.fileInput) this.$refs.fileInput.value = '';
-      if (this.$refs.zipInput) this.$refs.zipInput.value = '';
+      this.currentFileName = '';
+      this.favorites = []; // 清空内存中的收藏，防止污染下一个文件
+
+      // === 新增：清除 IndexedDB ===
+      await this.clearDB();
     },
 
     // ========== 分页方法 ==========
@@ -2066,25 +2246,47 @@ export default {
 
     // ========== 收藏和划线方法 ==========
 
-    loadFavoritesFromStorage() {
+    async loadFavoritesFromStorage() {
+      // 如果没有文件名（比如刚打开还没上传），就清空收藏
+      if (!this.currentFileName) {
+        this.favorites = [];
+        return;
+      }
+
       try {
-        const saved = localStorage.getItem('st_reader_favorites');
-        if (saved) {
-          this.favorites = JSON.parse(saved);
-        }
+        const db = await this.initDB();
+        const transaction = db.transaction(['fileFavorites'], 'readonly');
+        const store = transaction.objectStore('fileFavorites');
+        // 使用当前文件名作为 Key 获取数据
+        const request = store.get(this.currentFileName);
+
+        request.onsuccess = (e) => {
+          // 如果读到了，就用读到的；读不到就初始化为空数组
+          this.favorites = e.target.result || [];
+          console.log(`已加载 ${this.currentFileName} 的收藏夹，共 ${this.favorites.length} 条`);
+        };
       } catch (e) {
         console.error('加载收藏失败:', e);
+        this.favorites = [];
       }
     },
 
-    saveFavoritesToStorage() {
+    async saveFavoritesToStorage() {
+      if (!this.currentFileName) return;
+
       try {
-        localStorage.setItem('st_reader_favorites', JSON.stringify(this.favorites));
+        const db = await this.initDB();
+        const transaction = db.transaction(['fileFavorites'], 'readwrite');
+        const store = transaction.objectStore('fileFavorites');
+
+        // 将当前的收藏列表保存到对应的文件名下
+        // JSON.parse(JSON.stringify(...)) 依然是为了剥离 Vue 的响应式外壳
+        const plainFavorites = JSON.parse(JSON.stringify(this.favorites));
+        store.put(plainFavorites, this.currentFileName);
       } catch (e) {
         console.error('保存收藏失败:', e);
       }
     },
-
     loadHighlightsFromStorage() {
       try {
         const saved = localStorage.getItem('st_reader_highlights');
@@ -2694,7 +2896,7 @@ export default {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.png,.json'; // 允许 PNG 和 JSON
-      
+
       input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -2711,7 +2913,7 @@ export default {
               return;
             }
             cardData = JSON.parse(charDataStr);
-            
+
           } else if (file.name.toLowerCase().endsWith('.json')) {
             // === 处理 JSON 预设文件 ===
             const text = await file.text();
@@ -2790,7 +2992,7 @@ export default {
         // 兼容不同的字段名 (SillyTavern 导出可能是 regex/replacement，内部可能是 findRegex/replaceString)
         const regexPattern = script.findRegex || script.regex;
         const replacePattern = script.replaceString || script.replacement || ''; // 允许空替换
-        
+
         if (regexPattern) {
           const newScript = {
             id: script.id || this.generateUUID(),
@@ -2811,10 +3013,10 @@ export default {
             // 策略：如果完全一样则跳过，不一样则添加副本
             const existing = this.regexScripts[existingIndex];
             if (existing.findRegex !== newScript.findRegex || existing.replaceString !== newScript.replaceString) {
-               newScript.id = this.generateUUID(); // 生成新ID作为副本
-               newScript.scriptName = newScript.scriptName + ' (导入副本)';
-               this.regexScripts.push(newScript);
-               importCount++;
+              newScript.id = this.generateUUID(); // 生成新ID作为副本
+              newScript.scriptName = newScript.scriptName + ' (导入副本)';
+              this.regexScripts.push(newScript);
+              importCount++;
             }
           } else {
             this.regexScripts.push(newScript);
@@ -3920,8 +4122,8 @@ export default {
     // === 新增：打开仪表盘角色的亲密度弹窗 ===
     openDashboardIntimacy(charName, files) {
       // 1. 初始化数据容器
-      const mergedDateMap = {}; 
-      
+      const mergedDateMap = {};
+
       // 2. 遍历该角色的所有文件进行汇总
       // 注意：这里先不急着算总数，我们后面统一通过 map 算更准确，或者保留 files 里的 reroll
       let totalRerolls = 0;
@@ -3952,9 +4154,9 @@ export default {
       let totalCharCount = 0;
 
       Object.values(mergedDateMap).forEach(val => {
-         if (val.count > maxDailyCount) maxDailyCount = val.count;
-         totalMsgCount += val.count;
-         totalCharCount += val.chars;
+        if (val.count > maxDailyCount) maxDailyCount = val.count;
+        totalMsgCount += val.count;
+        totalCharCount += val.chars;
       });
 
       // 4. 计算日期范围
@@ -4062,9 +4264,223 @@ export default {
 
       return `rgb(${r}, ${g}, ${b})`;
     },
-  }
-}
 
+    // === IndexedDB 核心操作 ===
+    async initDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open('STReaderDB', 1);
+        request.onerror = () => reject('数据库打开失败');
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          // 创建两个存储库：一个是应用状态(viewMode等)，一个是文件数据(大文件)
+          if (!db.objectStoreNames.contains('appState')) {
+            db.createObjectStore('appState');
+          }
+
+          if (!db.objectStoreNames.contains('fileFavorites')) {
+            db.createObjectStore('fileFavorites');
+            console.log('IndexedDB: fileFavorites store created');
+          }
+        };
+      });
+    },
+
+    async saveToDB(key, value) {
+      const db = await this.initDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['appState'], 'readwrite');
+        const store = transaction.objectStore('appState');
+        const request = store.put(value, key);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject('保存失败');
+      });
+    },
+
+    async getFromDB(key) {
+      const db = await this.initDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['appState'], 'readonly');
+        const store = transaction.objectStore('appState');
+        const request = store.get(key);
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = () => reject('读取失败');
+      });
+    },
+
+    async clearDB() {
+      const db = await this.initDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['appState'], 'readwrite');
+        const store = transaction.objectStore('appState');
+        const request = store.clear();
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject();
+      });
+    },
+
+    triggerImportFavorites() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = this.handleImportFavorites;
+      input.click();
+    },
+
+    async handleImportFavorites(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const imported = JSON.parse(text);
+
+        if (!Array.isArray(imported)) {
+          alert('无效的收藏夹文件格式');
+          return;
+        }
+
+        let count = 0;
+        let skipCount = 0;
+
+        // 遍历导入的每一项
+        imported.forEach(item => {
+          // 1. 查重：防止重复导入相同的 ID
+          const exists = this.favorites.some(f => f.id === item.id);
+
+          // 2. 安全检查：确保收藏的楼层号不超过当前文件的最大楼层
+          // (防止把几千楼的收藏导入到只有几百楼的新文件里)
+          const isValidIndex = item.messageIndex < this.messages.length;
+
+          if (!exists && isValidIndex) {
+            this.favorites.push(item);
+            count++;
+          } else {
+            skipCount++;
+          }
+        });
+
+        if (count > 0) {
+          // 导入后重新按楼层排序，防止顺序乱掉
+          this.favorites.sort((a, b) => a.messageIndex - b.messageIndex);
+
+          await this.saveFavoritesToStorage(); // 保存到当前文件名下
+          alert(`成功导入 ${count} 条收藏${skipCount > 0 ? ` (跳过 ${skipCount} 条重复或无效项)` : ''}`);
+        } else {
+          alert('没有导入任何新内容（可能是全部重复，或者楼层号超出了当前文件范围）');
+        }
+
+      } catch (e) {
+        console.error(e);
+        alert('导入失败：文件格式错误');
+      }
+      // 清空 input 防止重复触发
+      event.target.value = '';
+    },
+
+    // 从数据库获取所有文件的收藏
+    async getAllFavoritesFromDB() {
+      const db = await this.initDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['fileFavorites'], 'readonly');
+        const store = transaction.objectStore('fileFavorites');
+        const request = store.openCursor();
+        const results = [];
+
+        request.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            // cursor.key 是文件名，cursor.value 是收藏数组
+            if (Array.isArray(cursor.value) && cursor.value.length > 0) {
+              results.push({
+                fileName: cursor.key,
+                items: cursor.value
+              });
+            }
+            cursor.continue();
+          } else {
+            // 遍历结束
+            resolve(results);
+          }
+        };
+        request.onerror = () => reject('读取全局收藏失败');
+      });
+    },
+
+    // 切换到全局视图
+    async switchToGlobalFavorites() {
+      this.viewingGlobalFavorites = true;
+      this.loadingStatus = '正在加载所有收藏...';
+      try {
+        this.globalFavoritesList = await this.getAllFavoritesFromDB();
+      } catch (e) {
+        console.error(e);
+      } finally {
+        this.loadingStatus = '';
+      }
+    },
+
+    // 切换回当前文件视图
+    switchToCurrentFavorites() {
+      this.viewingGlobalFavorites = false;
+    },
+
+    // 导出所有收藏 (全局备份)
+    async exportGlobalFavorites() {
+      const allData = await this.getAllFavoritesFromDB();
+      if (allData.length === 0) {
+        alert('没有任何收藏数据');
+        return;
+      }
+
+      const dataStr = JSON.stringify(allData, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // 文件名带上 global 标识
+      const date = new Date().toISOString().slice(0, 10);
+      a.download = `ST_All_Favorites_Backup_${date}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+
+    // 删除全局视图中的某条收藏
+    async deleteGlobalFavorite(fileName, favId) {
+      if (!confirm(`确定要从 "${fileName}" 的记录中删除这条收藏吗？`)) return;
+
+      try {
+        const db = await this.initDB();
+        const transaction = db.transaction(['fileFavorites'], 'readwrite');
+        const store = transaction.objectStore('fileFavorites');
+
+        // 1. 先读取该文件的列表
+        const getRequest = store.get(fileName);
+
+        getRequest.onsuccess = (e) => {
+          const list = e.target.result || [];
+          // 2. 过滤掉要删除的项
+          const newList = list.filter(item => item.id !== favId);
+
+          // 3. 写回数据库
+          store.put(newList, fileName);
+
+          // 4. 更新内存中的视图
+          const fileGroup = this.globalFavoritesList.find(g => g.fileName === fileName);
+          if (fileGroup) {
+            fileGroup.items = newList;
+            // 如果该文件删空了，从视图中移除
+            if (newList.length === 0) {
+              this.globalFavoritesList = this.globalFavoritesList.filter(g => g.fileName !== fileName);
+            }
+          }
+        };
+      } catch (e) {
+        console.error('删除失败', e);
+      }
+    },
+  },
+}
 </script>
 
 <style scoped>
@@ -4072,14 +4488,14 @@ export default {
    📊 仪表盘 (Dashboard) 样式
    ========================================= */
 
-  .dashboard-header {
+.dashboard-header {
   padding: 3rem 3rem 1.5rem;
   background: #fff;
   border-bottom: 2px solid #000;
   position: sticky;
   top: 0;
   z-index: 10;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 }
 
 .header-column {
@@ -4090,8 +4506,10 @@ export default {
 
 .header-title-row {
   display: flex;
-  justify-content: space-between; /* 关键：两端对齐！ */
-  align-items: center; /* 垂直居中 */
+  justify-content: space-between;
+  /* 关键：两端对齐！ */
+  align-items: center;
+  /* 垂直居中 */
   width: 100%;
 }
 
@@ -4126,14 +4544,33 @@ export default {
   gap: 0.5rem;
   width: fit-content;
 }
-.back-btn:hover { color: #000; }
+
+.back-btn:hover {
+  color: #000;
+}
 
 /* 夜间模式适配 */
-.dark-mode .dashboard-header { background: #1e1e1e; border-bottom-color: #333; }
-.dark-mode .back-btn { color: #aaa; }
-.dark-mode .back-btn:hover { color: #fff; }
-.dark-mode .header-title-row h1 { color: #e0e0e0; }
-.dark-mode .dashboard-meta { background: #2d2d2d; color: #aaa; }
+.dark-mode .dashboard-header {
+  background: #1e1e1e;
+  border-bottom-color: #333;
+}
+
+.dark-mode .back-btn {
+  color: #aaa;
+}
+
+.dark-mode .back-btn:hover {
+  color: #fff;
+}
+
+.dark-mode .header-title-row h1 {
+  color: #e0e0e0;
+}
+
+.dark-mode .dashboard-meta {
+  background: #2d2d2d;
+  color: #aaa;
+}
 
 .back-btn:hover {
   color: #000;
@@ -4158,17 +4595,22 @@ export default {
   /* === 新增：白色卡片背景样式 === */
   background: #fff;
   border: 1px solid #eee;
-  border-radius: 0px;     /* 圆角 */
-  padding: 2.5rem 2rem;    /* 增加内边距，让内容不拥挤 */
-  box-shadow: 0 4px 20px rgba(0,0,0,0.03); /* 很淡的阴影，增加层次感 */
-  
+  border-radius: 0px;
+  /* 圆角 */
+  padding: 2.5rem 2rem;
+  /* 增加内边距，让内容不拥挤 */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  /* 很淡的阴影，增加层次感 */
+
   /* 布局保持不变 */
   display: flex;
   flex-direction: column;
   align-items: center;
   margin-bottom: 3rem;
-  max-width: 900px;        /* 限制卡片最大宽度 */
-  margin-left: auto;       /* 居中卡片 */
+  max-width: 900px;
+  /* 限制卡片最大宽度 */
+  margin-left: auto;
+  /* 居中卡片 */
   margin-right: auto;
 }
 
@@ -4180,7 +4622,8 @@ export default {
 }
 
 .hero-value {
-  font-size: 4.5rem; /* 大数字再大一点点 */
+  font-size: 4.5rem;
+  /* 大数字再大一点点 */
   font-weight: 800;
   color: #1a1a1a;
   line-height: 1;
@@ -4199,9 +4642,11 @@ export default {
 .stat-divider {
   width: 100%;
   height: 1px;
-  background-color: #f0f0f0; /*稍微淡一点*/
+  background-color: #f0f0f0;
+  /*稍微淡一点*/
   margin-bottom: 2rem;
-  max-width: 100%; /* 分割线撑满卡片宽度 (或者保留 padding) */
+  max-width: 100%;
+  /* 分割线撑满卡片宽度 (或者保留 padding) */
 }
 
 /* --- 下部三列数据 --- */
@@ -4216,7 +4661,8 @@ export default {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  flex: 1; /* 均分宽度 */
+  flex: 1;
+  /* 均分宽度 */
 }
 
 .sub-value {
@@ -4235,14 +4681,15 @@ export default {
 /* --- 移动端适配 --- */
 @media (max-width: 768px) {
   .stats-overview {
-    padding: 1.5rem; /* 手机上内边距小一点 */
+    padding: 1.5rem;
+    /* 手机上内边距小一点 */
     margin-bottom: 2rem;
   }
 
   .hero-value {
     font-size: 3rem;
   }
-  
+
   .sub-value {
     font-size: 1.5rem;
   }
@@ -4250,7 +4697,8 @@ export default {
 
 /* --- 夜间模式适配 --- */
 .dark-mode .stats-overview {
-  background: #1e1e1e; /* 夜间模式背景变深 */
+  background: #1e1e1e;
+  /* 夜间模式背景变深 */
   border-color: #333;
   box-shadow: none;
 }
@@ -4304,7 +4752,8 @@ export default {
 }
 
 .char-name {
-  font-size: 1.2rem; /* 稍微调整名字大小 */
+  font-size: 1.2rem;
+  /* 稍微调整名字大小 */
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -4328,12 +4777,15 @@ export default {
 
 /* === 纯图标按钮样式 === */
 .icon-only-btn {
-  padding: 0;        /* 去掉内边距 */
+  padding: 0;
+  /* 去掉内边距 */
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;    /* 关键：防止被挤扁 */
-  font-size: 1.2rem; /* 图标大小 */
+  flex-shrink: 0;
+  /* 关键：防止被挤扁 */
+  font-size: 1.2rem;
+  /* 图标大小 */
   line-height: 1;
 }
 
@@ -4354,12 +4806,16 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  
+
   /* --- 核心修改：减小高度 --- */
-  padding: 0.75rem 1rem;  /* 减小内边距 (原为 1.25rem) */
-  min-height: auto;       /* 取消固定高度 120px，改为自适应 */
-  height: auto;           /* 允许高度随内容缩放 */
-  gap: 0.5rem;            /* 控制内部元素间距 */
+  padding: 0.75rem 1rem;
+  /* 减小内边距 (原为 1.25rem) */
+  min-height: auto;
+  /* 取消固定高度 120px，改为自适应 */
+  height: auto;
+  /* 允许高度随内容缩放 */
+  gap: 0.5rem;
+  /* 控制内部元素间距 */
 }
 
 .file-card:hover {
@@ -4391,10 +4847,11 @@ export default {
   font-size: 0.95rem;
   line-height: 1.3;
   margin-bottom: 0.75rem;
-  
+
 
   display: -webkit-box;
-  -webkit-line-clamp: 1;  /* 只显示1行，或者改回2行 */
+  -webkit-line-clamp: 1;
+  /* 只显示1行，或者改回2行 */
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-all;
@@ -4427,10 +4884,12 @@ export default {
 .file-date {
   font-size: 0.75rem;
   color: #ccc;
-  margin-top: 0;       /* 去掉顶部间距，改用 Flex 布局控制 */
+  margin-top: 0;
+  /* 去掉顶部间距，改用 Flex 布局控制 */
   text-align: right;
   font-family: monospace;
-  position: absolute;  /* (可选) 如果想把日期固定在右下角，可以用绝对定位 */
+  position: absolute;
+  /* (可选) 如果想把日期固定在右下角，可以用绝对定位 */
   right: 0.75rem;
   bottom: 0.75rem;
 }
@@ -4532,10 +4991,13 @@ export default {
 
 .upload-container {
   width: 100%;
-  max-width: 400px; /* 电脑端限制宽度，确保垂直排列好看 */
+  max-width: 400px;
+  /* 电脑端限制宽度，确保垂直排列好看 */
   display: flex;
-  flex-direction: column; /* 电脑端默认垂直排列 */
-  gap: 1.5rem; /* 卡片之间的间距 */
+  flex-direction: column;
+  /* 电脑端默认垂直排列 */
+  gap: 1.5rem;
+  /* 卡片之间的间距 */
   align-items: center;
 }
 
@@ -4579,14 +5041,18 @@ export default {
 /* === 加载状态居中样式 === */
 .loading-status {
   display: flex;
-  flex-direction: column; /* 上下图表，下文字 */
-  align-items: center;    /* 水平居中 */
+  flex-direction: column;
+  /* 上下图表，下文字 */
+  align-items: center;
+  /* 水平居中 */
   justify-content: center;
-  margin-top: 2rem;       /* 与上方按钮拉开距离 */
+  margin-top: 2rem;
+  /* 与上方按钮拉开距离 */
   color: #666;
   font-size: 0.9rem;
   font-weight: 600;
-  gap: 0.75rem;           /* 图标和文字的间距 */
+  gap: 0.75rem;
+  /* 图标和文字的间距 */
   animation: fadeIn 0.3s ease;
 }
 
@@ -4594,20 +5060,34 @@ export default {
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #eee;      /* 浅色底环 */
-  border-top: 3px solid #000;  /* 深色旋转头 */
+  border: 3px solid #eee;
+  /* 浅色底环 */
+  border-top: 3px solid #000;
+  /* 深色旋转头 */
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* 夜间模式适配 */
@@ -6640,6 +7120,37 @@ export default {
   background: #e0e0e0;
 }
 
+/* === 移动端适配：酒馆日记头部布局调整 === */
+@media (max-width: 768px) {
+  .dash-cal-header {
+    flex-wrap: wrap;
+    /* 允许换行 */
+    gap: 0.5rem;
+    /* 元素间距 */
+  }
+
+  /* 1. 标题放在左上 */
+  .dash-cal-title {
+    order: 1;
+  }
+
+  /* 2. 按钮放在右上 (强制挤到右边) */
+  .view-toggle-btn {
+    order: 2;
+    margin-left: auto;
+  }
+
+  /* 3. 统计信息强制换行到下方 */
+  .dash-cal-meta {
+    order: 3;
+    width: 100%;
+    /* 占满一行 */
+    margin-top: 0.2rem;
+    margin-left: 0;
+    /* 清除可能存在的左边距 */
+  }
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
   .chat-header {
@@ -6762,21 +7273,413 @@ export default {
   font-size: 0.875rem;
   color: #666;
 }
+
+/* === 切换按钮 === */
+.view-toggle-btn {
+  background: transparent;
+  border: 1px solid #ddd;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
+  color: #666;
+  transition: all 0.2s;
+  margin-left: auto;
+  /* 靠右挤 */
+  border-radius: 0px;
+}
+
+.view-toggle-btn:hover {
+  background: #f0f0f0;
+  color: #000;
+  border-color: #999;
+}
+
+/* === 热力图容器 === */
+.heatmap-widget {
+  background: #fff;
+  padding: 1rem 0;
+  animation: fadeIn 0.3s ease;
+}
+
+.heatmap-scroll-container {
+  overflow-x: auto;
+  /* 允许横向滚动 */
+  padding-bottom: 15px;
+  /* 留出滚动条空间 */
+  /* 自定义滚动条样式 (Chrome/Safari) */
+  padding-top: 5px;
+}
+
+.heatmap-scroll-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.heatmap-scroll-container::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 3px;
+}
+
+.heatmap-grid {
+  display: inline-flex;
+  /* 让内容横向排列 */
+  gap: 4px;
+  /* 列间距 */
+  padding: 0 3rem;
+}
+
+/* 左侧星期标尺 */
+.heatmap-week-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-right: 6px;
+  font-size: 0.7rem;
+  color: #999;
+  height: calc(12px * 7 + 3px * 6);
+  /* 计算高度对齐格子 */
+  padding-top: 1px;
+  /* 微调对齐 */
+}
+
+.heatmap-week-labels span {
+  height: 12px;
+  line-height: 12px;
+  font-family: monospace;
+}
+
+/* 每一列 (周) */
+.heatmap-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* 行间距 */
+}
+
+/* 每一个格子 */
+.heatmap-cell {
+  width: 18px;
+  height: 18px;
+  border-radius: 1px;
+  background-color: #ebedf0;
+  /* 默认灰色 (GitHub 风格) */
+  transition: transform 0.1s;
+}
+
+.heatmap-cell:hover {
+  transform: scale(1.3);
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  z-index: 2;
+}
+
+/* 底部图例区 */
+.heatmap-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0 1rem;
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-item {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+/* 图例颜色 (你可以根据你的 getGradientColor 调整这里，这里是示例粉色系) */
+.legend-item.level-1 {
+  background-color: #fce4ec;
+}
+
+/* 浅 */
+.legend-item.level-2 {
+  background-color: #f48fb1;
+}
+
+.legend-item.level-3 {
+  background-color: #e91e63;
+}
+
+.legend-item.level-4 {
+  background-color: #880e4f;
+}
+
+/* 深 */
+
+/* === 夜间模式适配 === */
+.dark-mode .view-toggle-btn {
+  border-color: #444;
+  color: #aaa;
+}
+
+.dark-mode .view-toggle-btn:hover {
+  background: #333;
+  color: #fff;
+}
+
+.dark-mode .heatmap-widget {
+  background: transparent;
+}
+
+.dark-mode .heatmap-cell {
+  background-color: #2d2d2d;
+  /* 夜间模式默认空格颜色 */
+}
+
+.dark-mode .heatmap-week-labels {
+  color: #666;
+}
+
+/* === 仪表盘日历最终修复 === */
+
+/* 1. 确保容器有背景和内边距 */
+.dashboard-calendar-section {
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  /* 关键：给一个最小高度，防止内容加载慢时塌陷 */
+  min-height: 200px;
+}
+
+/* 2. 确保格子有高度 */
+.day-cell {
+  /* 关键：强制设置高度，之前可能因为 aspect-ratio 兼容性问题导致高度为0 */
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0px;
+  font-size: 0.9rem;
+  color: #999;
+}
+
+/* 3. 确保有数据的格子文字清晰 */
+.day-cell.has-data {
+  color: #fff;
+  font-weight: bold;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* 4. 确保 Grid 布局正确 */
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+/* 5. 年视图容器修复 */
+.heatmap-widget {
+  width: 100%;
+  overflow: hidden;
+  padding-top: 10px;
+}
+
+/* 6. 夜间模式适配补充 */
+.dark-mode .dashboard-calendar-section {
+  background: #1e1e1e;
+  border-color: #333;
+}
+
+.dark-mode .day-cell {
+  background: #2f2f2f;
+  /* 无数据时的底色 */
+}
+
+/* === 收藏夹面板新布局 === */
+.fav-header-container {
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 1rem;
+}
+
+.fav-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+/* 分段控制器样式 */
+.fav-tabs-row {
+  display: flex;
+  width: 100%;
+  border: 1px solid #000;
+  border-radius: 4px;
+  /* 这里也可以改成 0px 如果你喜欢直角 */
+  overflow: hidden;
+}
+
+.fav-tab {
+  flex: 1;
+  /* 均分宽度 */
+  border: none;
+  background: #fff;
+  color: #000;
+  padding: 6px 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-right: 1px solid #000;
+}
+
+.fav-tab:last-child {
+  border-right: none;
+}
+
+.fav-tab.active {
+  background: #000;
+  color: #fff;
+}
+
+.fav-tab:hover:not(.active) {
+  background: #f0f0f0;
+}
+
+/* 稍微紧凑一点的按钮，省空间 */
+.compact-btn {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+
+/* 夜间模式适配 */
+.dark-mode .fav-header-container {
+  border-bottom-color: #333;
+}
+
+.dark-mode .fav-tabs-row {
+  border-color: #555;
+}
+
+.dark-mode .fav-tab {
+  background: #2d2d2d;
+  color: #aaa;
+  border-right-color: #555;
+}
+
+.dark-mode .fav-tab.active {
+  background: #e0e0e0;
+  color: #121212;
+}
+
+.dark-mode .fav-tab:hover:not(.active) {
+  background: #333;
+}
+
+/* === 收藏夹极简布局 (Underline Style) === */
+
+.fav-header-minimal {
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid #eee;
+  /* 整个头部的底部分割线 */
+}
+
+.fav-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  /* 底部对齐，配合 Tabs 的下划线 */
+}
+
+/* Tabs 容器 */
+.fav-tabs-simple {
+  display: flex;
+  gap: 1.5rem;
+  /* Tab 之间的间距 */
+}
+
+/* Tab 按钮样式 */
+.simple-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  /* 默认透明下划线 */
+  padding: 8px 2px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: -1px;
+  /* 让选中态的下划线盖住容器的分割线 */
+}
+
+.simple-tab:hover {
+  color: #333;
+}
+
+/* 选中状态：黑色文字 + 黑色下划线 */
+.simple-tab.active {
+  color: #000;
+  border-bottom-color: #000;
+}
+
+/* 右侧操作按钮区 */
+.fav-actions-simple {
+  display: flex;
+  gap: 0.5rem;
+  padding-bottom: 6px;
+  /* 稍微抬高一点 */
+}
+
+/* 超小号按钮样式 */
+.btn-xs {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  height: 24px;
+}
+
+/* 夜间模式适配 */
+.dark-mode .fav-header-minimal {
+  border-bottom-color: #333;
+}
+
+.dark-mode .simple-tab {
+  color: #666;
+}
+
+.dark-mode .simple-tab:hover {
+  color: #ccc;
+}
+
+.dark-mode .simple-tab.active {
+  color: #fff;
+  border-bottom-color: #fff;
+}
 </style>
 
 <style>
 /* === 新增：全局重置 (修复移动端白边和滚动问题) === */
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  overflow-x: hidden; /* 禁止横向滚动 */
-  -webkit-tap-highlight-color: transparent; /* 移除点击高亮 */
+  overflow-x: hidden;
+  /* 禁止横向滚动 */
+  -webkit-tap-highlight-color: transparent;
+  /* 移除点击高亮 */
 }
 
 /* 强制所有元素使用边框盒模型，防止 padding 撑大布局 */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -7500,13 +8403,6 @@ html, body {
   padding-bottom: 10px;
 }
 
-.heatmap-grid {
-  display: flex;
-  gap: 3px;
-  /* 使得容器高度刚好包裹7行方块 */
-  height: calc(12px * 8);
-}
-
 .heatmap-week-col {
   display: flex;
   flex-direction: column;
@@ -8170,21 +9066,27 @@ html, body {
 .char-header {
   display: flex;
   justify-content: space-between;
-  align-items: center; /* 垂直居中 */
+  align-items: center;
+  /* 垂直居中 */
   gap: 1rem;
-  margin-bottom: 1rem; /* 减小一点间距 */
+  margin-bottom: 1rem;
+  /* 减小一点间距 */
   border-bottom: 1px solid #eee;
   padding-bottom: 0.75rem;
-  flex-wrap: nowrap !important; /* 关键：禁止换行 */
+  flex-wrap: nowrap !important;
+  /* 关键：禁止换行 */
 }
 
 /* 新增：左侧标题包裹层 */
 .char-header-left {
   display: flex;
-  flex-direction: column; /* 名字和统计上下排布 */
+  flex-direction: column;
+  /* 名字和统计上下排布 */
   gap: 0.25rem;
-  flex: 1; /* 占据剩余空间 */
-  min-width: 0; /* 防止文本过长撑开容器 */
+  flex: 1;
+  /* 占据剩余空间 */
+  min-width: 0;
+  /* 防止文本过长撑开容器 */
 }
 
 /* 稍微调小一点按钮，显得精致 */
@@ -8212,7 +9114,8 @@ html, body {
   }
 
   .icon-only-btn {
-    width: 32px;  /* 手机上稍微小一点 */
+    width: 32px;
+    /* 手机上稍微小一点 */
     height: 32px;
     font-size: 1.1rem;
   }
@@ -8327,13 +9230,15 @@ html, body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.75rem; /* 与标题拉开一点距离 */
+  margin-bottom: 0.75rem;
+  /* 与标题拉开一点距离 */
   transition: color 0.2s;
   width: fit-content;
 }
 
 .back-link-btn:hover {
-  background: none; /* 覆盖可能继承的按钮背景 */
+  background: none;
+  /* 覆盖可能继承的按钮背景 */
   color: #000;
 }
 
