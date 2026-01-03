@@ -192,6 +192,12 @@
           </div>
 
         </div>
+
+        <div class="filter-bar">
+          <Icon icon="bi:search" style="position:absolute; left:1rem; top:50%; transform:translateY(-50%); color:#999;" />
+          <input v-model="dashboardSearch" type="text" placeholder="搜索角色名或文件名..." class="dash-search-input" style="padding-left: 2.5rem;" />
+        </div>
+
         <div class="character-groups">
           <div v-for="(files, charName) in filteredDashboardGroups" :key="charName" class="char-group">
             <div class="char-header">
