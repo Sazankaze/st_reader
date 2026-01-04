@@ -149,7 +149,7 @@
                 class="nav-btn">◀</button>
 
               <div class="current-month-label">
-                {{ currentHeatmapYear }} 年度全景
+                {{ currentHeatmapYear }} 年度总览
               </div>
 
               <button @click="nextHeatmapYear" :disabled="currentHeatmapYear >= heatmapYears[heatmapYears.length - 1]"
@@ -247,34 +247,41 @@
             <span class="message-count">{{ messages.length }} 条消息</span>
           </div>
         </div>
+        
         <div class="header-actions">
           <button @click="toggleSearchBar" :class="['action-button', 'search-toggle', { 'active': showSearchBar }]">
             搜索
           </button>
+          
           <button @click="toggleTagFilterManager" :class="['action-button', { 'active': showTagFilterManager }]">
             标签过滤 <span v-if="tagFilters.length">({{tagFilters.filter(f => !f.disabled).length}})</span>
           </button>
-          <button @click="toggleRegexManager" class="action-button regex-button">
+          
+          <button @click="toggleRegexManager" :class="['action-button', 'regex-button', { 'active': showRegexManager }]">
             正则脚本 <span v-if="regexScripts.length">({{regexScripts.filter(s => !s.disabled).length}})</span>
           </button>
-          <div class="header-actions">
-            <button @click="toggleFavoritesPanel" :class="['action-button', { 'active': showFavoritesPanel }]">
-              收藏夹 <span v-if="favorites.length">({{ favorites.length }})</span>
-            </button>
-            <button @click="openIntimacyModal" class="action-button intimacy-btn">
-              <Icon icon="bxs:heart" class="heart-icon" /> 亲密度
-            </button>
-            <button @click="toggleReadingMode"
-              :class="['action-button', 'reading-mode-btn', { 'active': readingMode }]">
-              阅读模式
-            </button>
-            <button @click="openExportRangeDialog" class="action-button">
-              导出
-            </button>
-          </div>
+          
+          <button @click="toggleFavoritesPanel" :class="['action-button', { 'active': showFavoritesPanel }]">
+            收藏夹 <span v-if="favorites.length">({{ favorites.length }})</span>
+          </button>
+          
+          <button @click="openIntimacyModal" class="action-button intimacy-btn">
+            <Icon icon="bxs:heart" class="heart-icon" /> 亲密度
+          </button>
+          
+          <button @click="toggleReadingMode"
+            :class="['action-button', 'reading-mode-btn', { 'active': readingMode }]">
+            阅读模式
+          </button>
+          
+          <button @click="openExportRangeDialog" class="action-button">
+            导出
+          </button>
+          
           <button @click="toggleStylePanel" :class="['action-button', { 'active': showStylePanel }]">
             样式
           </button>
+          
           <button @click="toggleDarkMode" class="action-button mode-toggle">
             <div class="icon-label-row">
               <template v-if="isDarkMode">
@@ -288,6 +295,7 @@
               </template>
             </div>
           </button>
+          
           <button @click="resetReader" class="reset-button">关闭</button>
         </div>
       </div>
@@ -302,6 +310,137 @@
           <span v-if="searchQuery">
             找到 {{ filteredMessages.length }} 条匹配
           </span>
+        </div>
+      </div>
+
+      <div v-if="showTagFilterManager" class="regex-manager tag-filter-manager">
+        <div class="regex-header">
+          <h2>标签过滤（优先于正则）</h2>
+          <div class="regex-actions">
+            <button @click="addNewTagFilter" class="btn btn-primary">添加过滤</button>
+          </div>
+        </div>
+
+        <div v-if="tagFilterForm.id" class="script-form">
+          <div class="form-group">
+            <label>过滤器名称</label>
+            <input v-model="tagFilterForm.name" type="text" placeholder="如：移除思维链" />
+          </div>
+          <div class="form-group">
+            <label>标签名（不含尖括号）</label>
+            <input v-model="tagFilterForm.tagName" type="text" placeholder="如：think 或 thinking" />
+            <div class="form-hint">支持多个标签，用逗号分隔，如：think,thinking,disclaimer</div>
+          </div>
+          <div class="form-group">
+            <label>过滤模式</label>
+            <select v-model="tagFilterForm.mode" class="form-select">
+              <option value="remove">删除这些标签及其内容</option>
+              <option value="keep">只保留这些标签内的内容</option>
+              <option value="unwrap">移除标签但保留内容</option>
+            </select>
+          </div>
+          <div class="form-group checkbox-group">
+            <label>
+              <input v-model="tagFilterForm.disabled" type="checkbox" />
+              禁用此过滤器
+            </label>
+          </div>
+          <div class="form-buttons">
+            <button @click="cancelEditTagFilter" class="btn btn-secondary">取消</button>
+            <button @click="saveTagFilter" class="btn btn-primary">保存</button>
+          </div>
+        </div>
+
+        <div class="script-list">
+          <div v-if="!tagFilters.length" class="no-scripts">
+            暂无标签过滤器，点击"添加过滤"来创建
+          </div>
+          <div v-for="(filter, index) in tagFilters" :key="filter.id"
+            :class="['script-item', { 'disabled': filter.disabled }]">
+            <div class="script-info">
+              <div class="script-name">{{ filter.name }}</div>
+              <div class="script-regex">
+                {{ filter.mode === 'remove' ? '删除' : filter.mode === 'keep' ? '只保留' : '解包' }}:
+                &lt;{{ filter.tagName }}&gt;
+              </div>
+            </div>
+            <div class="script-controls">
+              <button @click="moveTagFilterUp(index)" :disabled="index === 0" class="btn-icon" title="上移">↑</button>
+              <button @click="moveTagFilterDown(index)" :disabled="index === tagFilters.length - 1" class="btn-icon"
+                title="下移">↓</button>
+              <button @click="toggleTagFilter(filter)" :class="['btn-toggle', { 'active': !filter.disabled }]">
+                {{ filter.disabled ? '已禁用' : '已启用' }}
+              </button>
+              <button @click="editTagFilter(filter)" class="btn-icon" title="编辑">✎</button>
+              <button @click="deleteTagFilter(filter.id)" class="btn-icon btn-danger" title="删除">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="showRegexManager" class="regex-manager">
+        <div class="regex-header">
+          <h2>正则脚本管理</h2>
+          <div class="regex-actions">
+            <button @click="importScripts" class="btn btn-secondary">导入JSON</button>
+            <button @click="importFromPNG" class="btn btn-secondary">从角色卡导入</button>
+            <button @click="exportScripts" class="btn btn-secondary" :disabled="!regexScripts.length">导出</button>
+            <button @click="addNewScript" class="btn btn-primary">添加脚本</button>
+          </div>
+        </div>
+
+        <div v-if="scriptForm.id" class="script-form">
+          <div class="form-group">
+            <label>脚本名称</label>
+            <input v-model="scriptForm.scriptName" type="text" placeholder="如：移除思维链内容" />
+          </div>
+          <div class="form-group">
+            <label>正则表达式</label>
+            <textarea v-model="scriptForm.findRegex" placeholder="如：/(<think>[\s\S]*?</think>)/gs" rows="3"></textarea>
+            <div class="form-hint">支持格式：/pattern/flags 或直接输入模式（默认添加 g 标志）</div>
+          </div>
+          <div class="form-group">
+            <label>替换内容</label>
+            <input v-model="scriptForm.replaceString" type="text" placeholder="留空表示删除匹配内容" />
+          </div>
+          <div class="form-group checkbox-group">
+            <label>
+              <input v-model="scriptForm.disabled" type="checkbox" />
+              禁用此脚本
+            </label>
+          </div>
+          <div class="form-buttons">
+            <button @click="cancelEdit" class="btn btn-secondary">取消</button>
+            <button @click="saveScript" class="btn btn-primary">保存</button>
+          </div>
+        </div>
+
+        <div class="script-list">
+          <div v-if="!regexScripts.length" class="no-scripts">
+            暂无正则脚本，点击"添加脚本"或"导入"来创建
+          </div>
+          <div v-for="(script, index) in regexScripts" :key="script.id"
+            :class="['script-item', { 'disabled': script.disabled, 'dragging': dragIndex === index }]" draggable="true"
+            @dragstart="handleDragStart(index)" @dragover="handleDragOver" @drop="(e) => handleDrop(e, index)"
+            @dragend="handleDragEnd">
+            <div class="script-drag-handle">⋮⋮</div>
+            <div class="script-info">
+              <div class="script-name">{{ script.scriptName }}</div>
+              <div class="script-regex">{{ script.findRegex.substring(0, 60) }}{{ script.findRegex.length > 60 ? '...' :
+                '' }}
+              </div>
+            </div>
+            <div class="script-controls">
+              <button @click="moveScriptUp(index)" :disabled="index === 0" class="btn-icon" title="上移">↑</button>
+              <button @click="moveScriptDown(index)" :disabled="index === regexScripts.length - 1" class="btn-icon"
+                title="下移">↓</button>
+              <button @click="toggleScript(script)" :class="['btn-toggle', { 'active': !script.disabled }]">
+                {{ script.disabled ? '已禁用' : '已启用' }}
+              </button>
+              <button @click="editScript(script)" class="btn-icon" title="编辑">✎</button>
+              <button @click="deleteScript(script.id)" class="btn-icon btn-danger" title="删除">✕</button>
+            </div>
+          </div>
         </div>
       </div>
 
