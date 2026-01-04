@@ -194,7 +194,8 @@
         </div>
 
         <div class="filter-bar">
-          <input v-model="dashboardSearch" type="text" placeholder="搜索角色名或文件名..." class="dash-search-input" style="padding-left: 2.5rem;" />
+          <input v-model="dashboardSearch" type="text" placeholder="搜索角色名或文件名..." class="dash-search-input"
+            style="padding-left: 2.5rem;" />
         </div>
 
         <div class="character-groups">
@@ -247,41 +248,41 @@
             <span class="message-count">{{ messages.length }} 条消息</span>
           </div>
         </div>
-        
+
         <div class="header-actions">
           <button @click="toggleSearchBar" :class="['action-button', 'search-toggle', { 'active': showSearchBar }]">
             搜索
           </button>
-          
+
           <button @click="toggleTagFilterManager" :class="['action-button', { 'active': showTagFilterManager }]">
             标签过滤 <span v-if="tagFilters.length">({{tagFilters.filter(f => !f.disabled).length}})</span>
           </button>
-          
-          <button @click="toggleRegexManager" :class="['action-button', 'regex-button', { 'active': showRegexManager }]">
+
+          <button @click="toggleRegexManager"
+            :class="['action-button', 'regex-button', { 'active': showRegexManager }]">
             正则脚本 <span v-if="regexScripts.length">({{regexScripts.filter(s => !s.disabled).length}})</span>
           </button>
-          
+
           <button @click="toggleFavoritesPanel" :class="['action-button', { 'active': showFavoritesPanel }]">
             收藏夹 <span v-if="favorites.length">({{ favorites.length }})</span>
           </button>
-          
+
           <button @click="openIntimacyModal" class="action-button intimacy-btn">
             <Icon icon="bxs:heart" class="heart-icon" /> 亲密度
           </button>
-          
-          <button @click="toggleReadingMode"
-            :class="['action-button', 'reading-mode-btn', { 'active': readingMode }]">
+
+          <button @click="toggleReadingMode" :class="['action-button', 'reading-mode-btn', { 'active': readingMode }]">
             阅读模式
           </button>
-          
+
           <button @click="openExportRangeDialog" class="action-button">
             导出
           </button>
-          
+
           <button @click="toggleStylePanel" :class="['action-button', { 'active': showStylePanel }]">
             样式
           </button>
-          
+
           <button @click="toggleDarkMode" class="action-button mode-toggle">
             <div class="icon-label-row">
               <template v-if="isDarkMode">
@@ -295,7 +296,7 @@
               </template>
             </div>
           </button>
-          
+
           <button @click="resetReader" class="reset-button">关闭</button>
         </div>
       </div>
@@ -1277,7 +1278,7 @@ export default {
   async mounted() {
     console.log('App mounted, viewMode:', this.viewMode);
 
-    // 1. 基础初始化 (保留你原有的逻辑)
+    // 1. 基础初始化
     document.body.style.overflow = '';
     this.loadScriptsFromStorage();
     this.loadTagFiltersFromStorage();
@@ -1319,19 +1320,51 @@ export default {
           }
         }
         else if (session.type === 'dashboard') {
-          // 恢复仪表盘
+          // === 仪表盘恢复逻辑 (核心修改) ===
           if (session.dashboardData) {
+            // 1. 恢复基础统计数据
             this.dashboardData = session.dashboardData;
-            this.dashboardCalendar = session.dashboardCalendar || { months: [], currentMonthIdx: 0, totalMessages: 0, activeDays: 0 };
-            this.heatmapData = session.heatmapData || [];
 
+            // 2. 恢复 ZIP 对象 (如果存在)
             if (session.blob) {
-              // 重新加载 ZIP 对象
               const zip = await JSZip.loadAsync(session.blob);
               this.zipFileCache = zip;
             }
+
+            // 3. 【关键修改】重新聚合全局日历数据
+            // 不再读取 session.heatmapData，而是现场计算，确保渲染正确
+            console.log('正在重新计算仪表盘日历视图...');
+            const globalDateMap = {};
+
+            // 遍历所有分组下的所有文件
+            Object.values(this.dashboardData.groups).forEach(files => {
+              files.forEach(f => {
+                if (f.dateMap) {
+                  Object.entries(f.dateMap).forEach(([dateKey, dayStats]) => {
+                    // 初始化日期对象
+                    if (!globalDateMap[dateKey]) {
+                      globalDateMap[dateKey] = { count: 0, chars: 0 };
+                    }
+
+                    // 累加数据 (兼容新旧数据结构)
+                    if (typeof dayStats === 'number') {
+                      // 兼容旧版只有消息数的情况
+                      globalDateMap[dateKey].count += dayStats;
+                    } else {
+                      // 标准结构 { count, chars }
+                      globalDateMap[dateKey].count += dayStats.count;
+                      globalDateMap[dateKey].chars += (dayStats.chars || 0);
+                    }
+                  });
+                }
+              });
+            });
+
+            // 4. 调用生成函数重新绘制
+            this.generateDashboardCalendarData(globalDateMap);
+
             this.viewMode = 'dashboard';
-            console.log('仪表盘恢复成功');
+            console.log('仪表盘恢复成功，日历已重绘');
           }
         }
 
