@@ -384,7 +384,7 @@
           <h2>正则脚本管理</h2>
           <div class="regex-actions">
             <button @click="importScripts" class="btn btn-secondary">导入JSON</button>
-            <button @click="importFromPNG" class="btn btn-secondary">从角色卡导入</button>
+            <button @click="importFromCardOrPreset" class="btn btn-secondary">从角色卡/预设导入</button>
             <button @click="exportScripts" class="btn btn-secondary" :disabled="!regexScripts.length">导出</button>
             <button @click="addNewScript" class="btn btn-primary">添加脚本</button>
           </div>
